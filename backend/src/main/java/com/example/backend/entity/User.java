@@ -5,11 +5,16 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 import java.util.Set;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import java.util.Collection;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
-public class User {
+public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,7 +42,21 @@ public class User {
 
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private LandlordProfile landlordProfile;
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        // Возвращаем роль пользователя, добавляя префикс "ROLE_", как того требует Spring Security
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+    }
 
+    @Override
+    public String getUsername() {
+        return email; // В качестве логина используем email
+    }
+
+    @Override
+    public String getPassword() {
+        return passwordHash; // Возвращаем захэшированный пароль
+    }
     // Избранное (Связь Many-to-Many с Property)
     @ManyToMany
     @JoinTable(
@@ -46,4 +65,12 @@ public class User {
             inverseJoinColumns = @JoinColumn(name = "property_id")
     )
     private Set<Property> favoriteProperties;
+    @Override
+    public boolean isAccountNonExpired() { return true; }
+    @Override
+    public boolean isAccountNonLocked() { return status != UserStatus.BANNED; }
+    @Override
+    public boolean isCredentialsNonExpired() { return true; }
+    @Override
+    public boolean isEnabled() { return status == UserStatus.ACTIVE; }
 }
