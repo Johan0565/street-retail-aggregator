@@ -1,4 +1,4 @@
-package com.example.backend.Entity;
+package com.example.backend.entity;
 
 public enum Role {
     TENANT, LANDLORD, ADMIN
