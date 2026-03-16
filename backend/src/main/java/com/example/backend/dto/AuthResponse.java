@@ -1,11 +1,10 @@
 package com.example.backend.dto;
 
+import com.example.backend.entity.Role;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import javax.management.relation.Role;
 
 @Data
 @Builder
