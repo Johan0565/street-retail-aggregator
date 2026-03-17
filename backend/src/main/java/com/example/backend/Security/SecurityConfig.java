@@ -28,9 +28,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/properties/{id}").permitAll()
 
-                        // Добавляем вот эту строчку: Разрешаем доступ к Swagger UI и API документации
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // 👇 ДОБАВЛЯЕМ ЭТУ СТРОЧКУ 👇
+                        .requestMatchers("/api/categories/**").permitAll()
 
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
