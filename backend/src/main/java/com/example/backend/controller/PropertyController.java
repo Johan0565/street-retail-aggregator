@@ -1,8 +1,10 @@
 package com.example.backend.controller;
 
+import com.example.backend.dto.CreatePropertyRequest;
 import com.example.backend.entity.Property;
 import com.example.backend.service.PropertyService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -35,5 +37,16 @@ public class PropertyController {
     private Long extractUserIdFromPrincipal(Principal principal) {
 
         return 1L;
+    }
+    @PostMapping
+    @PreAuthorize("hasRole('LANDLORD')")
+    public ResponseEntity<Property> createProperty(
+            @RequestBody CreatePropertyRequest request,
+            Principal principal) {
+
+        Long landlordId = extractUserIdFromPrincipal(principal);
+        Property createdProperty = propertyService.createProperty(landlordId, request);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdProperty);
     }
 }

@@ -1,16 +1,17 @@
 package com.example.backend.service;
 
-import com.example.backend.entity.BusinessCategory;
-import com.example.backend.entity.Property;
-import com.example.backend.entity.PropertyStatus;
-import com.example.backend.entity.TenantProfile;
+import com.example.backend.dto.CreatePropertyRequest;
+import com.example.backend.entity.*;
 import com.example.backend.repository.PropertyRepository;
+import com.example.backend.repository.BusinessCategoryRepository;
+import com.example.backend.repository.UserRepository;
 import com.example.backend.repository.TenantProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -19,7 +20,8 @@ public class PropertyService {
 
     private final PropertyRepository propertyRepository;
     private final TenantProfileRepository tenantProfileRepository;
-
+    private final UserRepository userRepository;
+    private final BusinessCategoryRepository businessCategoryRepository;
     @Transactional(readOnly = true)
     public List<Property> getRecommendedPropertiesForTenant(Long tenantUserId) {
         TenantProfile tenant = tenantProfileRepository.findById(tenantUserId)
@@ -58,5 +60,37 @@ public class PropertyService {
     public Property getPropertyById(Long id) {
         return propertyRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+    }
+    @Transactional
+    public Property createProperty(Long landlordId, CreatePropertyRequest request) {
+        User landlord = userRepository.findById(landlordId)
+                .orElseThrow(() -> new RuntimeException("Арендодатель не найден"));
+
+        // Ищем в базе категории соседей, которых указал арендодатель
+        Set<BusinessCategory> neighbors = null;
+        if (request.getExistingNeighborCategoryIds() != null && !request.getExistingNeighborCategoryIds().isEmpty()) {
+            neighbors = new java.util.HashSet<>(
+                    businessCategoryRepository.findAllById(request.getExistingNeighborCategoryIds())
+            );
+        }
+
+        Property property = Property.builder()
+                .landlord(landlord)
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .address(request.getAddress())
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
+                .areaSqm(request.getAreaSqm())
+                .pricePerMonth(request.getPricePerMonth())
+                .powerKw(request.getPowerKw())
+                .hasWater(request.getHasWater())
+                .hasVentilation(request.getHasVentilation())
+                .hasSeparateEntrance(request.getHasSeparateEntrance())
+                .status(PropertyStatus.PUBLISHED) // Для тестов сразу публикуем
+                .existingNeighbors(neighbors)
+                .build();
+
+        return propertyRepository.save(property);
     }
 }
