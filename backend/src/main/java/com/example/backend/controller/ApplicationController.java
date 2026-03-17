@@ -2,11 +2,13 @@ package com.example.backend.controller;
 import com.example.backend.dto.CreateApplicationRequest;
 import com.example.backend.dto.UpdateApplicationStatusRequest;
 import com.example.backend.entity.Application;
+import com.example.backend.entity.User;
 import com.example.backend.service.ApplicationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
@@ -65,6 +67,24 @@ public class ApplicationController {
     }
 
     private Long extractUserIdFromPrincipal(Principal principal) {
-        return 1L;
+        if (principal instanceof UsernamePasswordAuthenticationToken authToken) {
+            User user = (User) authToken.getPrincipal();
+            return user.getId();
+        }
+        throw new RuntimeException("Не удалось извлечь ID пользователя из токена");
+    }
+
+    /**
+     * Отозвать (удалить) заявку
+     * Защищено: только Арендатор.
+     */
+    @DeleteMapping("/{applicationId}")
+    @PreAuthorize("hasRole('TENANT')")
+    public ResponseEntity<Void> deleteApplication(
+            @PathVariable Long applicationId,
+            Principal principal) {
+        Long tenantId = extractUserIdFromPrincipal(principal);
+        applicationService.deleteApplication(tenantId, applicationId);
+        return ResponseEntity.noContent().build();
     }
 }

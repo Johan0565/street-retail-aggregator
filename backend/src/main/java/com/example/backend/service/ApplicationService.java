@@ -73,5 +73,21 @@ public class ApplicationService {
     @Transactional(readOnly = true)
     public List<Application> getLandlordApplications(Long landlordId) {
         return applicationRepository.findByProperty_LandlordId(landlordId);
+    }@Transactional
+    public void deleteApplication(Long tenantId, Long applicationId) {
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
+
+        if (!application.getTenant().getId().equals(tenantId)) {
+            throw new RuntimeException("Вы не можете удалить чужую заявку");
+        }
+
+        // Если заявка уже принята, удалять нельзя
+        if (application.getStatus() == ApplicationStatus.ACCEPTED) {
+            throw new RuntimeException("Нельзя удалить уже принятую заявку");
+        }
+
+        applicationRepository.delete(application);
     }
+
 }

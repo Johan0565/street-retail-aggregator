@@ -93,4 +93,47 @@ public class PropertyService {
 
         return propertyRepository.save(property);
     }
+    @Transactional(readOnly = true)
+    public List<Property> getMyProperties(Long landlordId) {
+        return propertyRepository.findByLandlordId(landlordId);
+    }
+
+    /**
+     * Обновить объявление
+     */
+    @Transactional
+    public Property updateProperty(Long landlordId, Long propertyId, CreatePropertyRequest request) {
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+
+        if (!property.getLandlord().getId().equals(landlordId)) {
+            throw new RuntimeException("Нет прав на редактирование чужого объекта");
+        }
+
+        // Обновляем базовые поля
+        property.setTitle(request.getTitle());
+        property.setDescription(request.getDescription());
+        property.setPricePerMonth(request.getPricePerMonth());
+        // ... (здесь можно добавить обновление остальных полей по аналогии) ...
+
+        return propertyRepository.save(property);
+    }
+
+    /**
+     * Архивация (Удаление) объявления
+     */
+    @Transactional
+    public void deleteProperty(Long landlordId, Long propertyId) {
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+
+        if (!property.getLandlord().getId().equals(landlordId)) {
+            throw new RuntimeException("Нет прав на удаление чужого объекта");
+        }
+
+        // В реальных системах данные не удаляют физически (repository.delete(property)),
+        // а меняют статус на "В архиве", чтобы не сломать историю заявок.
+        property.setStatus(PropertyStatus.ARCHIVED);
+        propertyRepository.save(property);
+    }
 }
