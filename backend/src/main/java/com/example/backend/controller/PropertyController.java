@@ -84,4 +84,10 @@ public class PropertyController {
         propertyService.deleteProperty(landlordId, id);
         return ResponseEntity.noContent().build();
     }
+    // ... существующий код ...
+
+    @GetMapping
+    public ResponseEntity<List<Property>> getAllProperties() {
+        return ResponseEntity.ok(propertyService.getAllPublishedProperties());
+    }
 }

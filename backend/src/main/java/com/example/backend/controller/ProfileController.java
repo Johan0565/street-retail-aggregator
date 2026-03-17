@@ -65,4 +65,16 @@ public class ProfileController {
         }
         throw new RuntimeException("Не удалось извлечь ID пользователя из токена");
     }
+    @GetMapping("/tenant/{userId}")
+    public ResponseEntity<TenantProfile> getTenantProfileById(@PathVariable Long userId) {
+        return ResponseEntity.ok(profileService.getTenantProfile(userId));
+    }
+
+    /**
+     * Публичный просмотр профиля арендодателя по ID пользователя
+     */
+    @GetMapping("/landlord/{userId}")
+    public ResponseEntity<LandlordProfile> getLandlordProfileById(@PathVariable Long userId) {
+        return ResponseEntity.ok(profileService.getLandlordProfile(userId));
+    }
 }

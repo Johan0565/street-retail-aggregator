@@ -89,5 +89,19 @@ public class ApplicationService {
 
         applicationRepository.delete(application);
     }
+    @Transactional(readOnly = true)
+    public Application getApplicationById(Long applicationId, Long currentUserId, com.example.backend.entity.Role currentUserRole) {
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
+        // Проверка безопасности: арендатор может смотреть только свои заявки, арендодатель - только на свои помещения
+        if (currentUserRole == com.example.backend.entity.Role.TENANT && !application.getTenant().getId().equals(currentUserId)) {
+            throw new RuntimeException("Доступ запрещен. Это не ваша заявка.");
+        }
+        if (currentUserRole == com.example.backend.entity.Role.LANDLORD && !application.getProperty().getLandlord().getId().equals(currentUserId)) {
+            throw new RuntimeException("Доступ запрещен. Это заявка не на ваше помещение.");
+        }
+
+        return application;
+    }
 }

@@ -1,6 +1,7 @@
 package com.example.backend.service;
 
 import com.example.backend.dto.BusinessCategoryDto;
+import com.example.backend.dto.CategoryRequest;
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.repository.BusinessCategoryRepository;
 import lombok.RequiredArgsConstructor;
@@ -62,5 +63,49 @@ public class CategoryService {
         }
 
         return dto;
+    }
+    @Transactional(readOnly = true)
+    public BusinessCategoryDto getCategoryById(Long id) {
+        BusinessCategory category = categoryRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Категория не найдена"));
+        return mapToDto(category);
+    }
+
+    @Transactional
+    public BusinessCategoryDto createCategory(CategoryRequest request) {
+        BusinessCategory category = new BusinessCategory();
+        category.setName(request.getName());
+
+        if (request.getParentId() != null) {
+            BusinessCategory parent = categoryRepository.findById(request.getParentId())
+                    .orElseThrow(() -> new RuntimeException("Родительская категория не найдена"));
+            category.setParentCategory(parent);
+        }
+        return mapToDto(categoryRepository.save(category));
+    }
+
+    @Transactional
+    public BusinessCategoryDto updateCategory(Long id, CategoryRequest request) {
+        BusinessCategory category = categoryRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Категория не найдена"));
+
+        category.setName(request.getName());
+
+        if (request.getParentId() != null) {
+            BusinessCategory parent = categoryRepository.findById(request.getParentId())
+                    .orElseThrow(() -> new RuntimeException("Родительская категория не найдена"));
+            category.setParentCategory(parent);
+        } else {
+            category.setParentCategory(null);
+        }
+        return mapToDto(categoryRepository.save(category));
+    }
+
+    @Transactional
+    public void deleteCategory(Long id) {
+        if (!categoryRepository.existsById(id)) {
+            throw new RuntimeException("Категория не найдена");
+        }
+        categoryRepository.deleteById(id);
     }
 }

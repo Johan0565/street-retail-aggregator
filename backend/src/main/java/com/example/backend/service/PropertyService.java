@@ -136,4 +136,13 @@ public class PropertyService {
         property.setStatus(PropertyStatus.ARCHIVED);
         propertyRepository.save(property);
     }
+    // ... существующий код ...
+
+    /**
+     * Получить все опубликованные помещения (общая лента)
+     */
+    @Transactional(readOnly = true)
+    public List<Property> getAllPublishedProperties() {
+        return propertyRepository.findByStatus(PropertyStatus.PUBLISHED);
+    }
 }

@@ -4,9 +4,8 @@ import com.example.backend.dto.BusinessCategoryDto;
 import com.example.backend.service.CategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -33,5 +32,30 @@ public class CategoryController {
     @GetMapping("/flat")
     public ResponseEntity<List<BusinessCategoryDto>> getAllCategoriesFlat() {
         return ResponseEntity.ok(categoryService.getAllFlat());
+    }
+    @GetMapping("/{id}")
+    public ResponseEntity<BusinessCategoryDto> getCategoryById(@PathVariable Long id) {
+        return ResponseEntity.ok(categoryService.getCategoryById(id));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BusinessCategoryDto> createCategory(@RequestBody com.example.backend.dto.CategoryRequest request) {
+        return ResponseEntity.ok(categoryService.createCategory(request));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BusinessCategoryDto> updateCategory(
+            @PathVariable Long id,
+            @RequestBody com.example.backend.dto.CategoryRequest request) {
+        return ResponseEntity.ok(categoryService.updateCategory(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteCategory(@PathVariable Long id) {
+        categoryService.deleteCategory(id);
+        return ResponseEntity.noContent().build();
     }
 }

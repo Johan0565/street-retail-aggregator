@@ -87,4 +87,13 @@ public class ApplicationController {
         applicationService.deleteApplication(tenantId, applicationId);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/{applicationId}")
+    @PreAuthorize("hasAnyRole('TENANT', 'LANDLORD')")
+    public ResponseEntity<Application> getApplicationById(
+            @PathVariable Long applicationId,
+            Principal principal) {
+        User user = (User) ((UsernamePasswordAuthenticationToken) principal).getPrincipal();
+        return ResponseEntity.ok(applicationService.getApplicationById(applicationId, user.getId(), user.getRole()));
+    }
 }
