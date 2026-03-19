@@ -23,4 +23,13 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
     }
+    @PostMapping("/verify")
+    public ResponseEntity<AuthResponse> verify(@RequestBody com.example.backend.dto.VerifyEmailRequest request) {
+        return ResponseEntity.ok(authService.verifyEmail(request));
+    }
+
+    @PostMapping("/resend-code")
+    public ResponseEntity<AuthResponse> resendCode(@RequestParam String email) {
+        return ResponseEntity.ok(authService.resendCode(email));
+    }
 }

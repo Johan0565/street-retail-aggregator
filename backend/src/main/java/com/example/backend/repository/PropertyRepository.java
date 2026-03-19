@@ -12,6 +12,9 @@ import java.util.List;
 @Repository
 public interface PropertyRepository extends JpaRepository<Property, Long> {
 
+    // Добавь этот метод в существующий PropertyRepository
+    @Query("SELECT p FROM User u JOIN u.favoriteProperties p WHERE u.id = :tenantId")
+    List<Property> findFavoritePropertiesByTenantId(@Param("tenantId") Long tenantId);
     List<Property> findByLandlordId(Long landlordId);
 
     List<Property> findByStatus(PropertyStatus status);

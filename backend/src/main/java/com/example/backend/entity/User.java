@@ -33,6 +33,12 @@ public class User implements UserDetails {
     @Enumerated(EnumType.STRING)
     private UserStatus status;
 
+    @Column(name = "verification_code")
+    private String verificationCode;
+
+    @Column(name = "code_expires_at")
+    private LocalDateTime codeExpiresAt;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
