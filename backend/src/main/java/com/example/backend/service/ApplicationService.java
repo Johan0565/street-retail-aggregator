@@ -1,5 +1,6 @@
 package com.example.backend.service;
 
+import com.example.backend.dto.ApplicationResponseDto;
 import com.example.backend.entity.*;
 import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.PropertyRepository;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -18,9 +20,8 @@ public class ApplicationService {
     private final PropertyRepository propertyRepository;
     private final UserRepository userRepository;
 
-
     @Transactional
-    public Application createApplication(Long tenantId, Long propertyId, String coverLetter) {
+    public ApplicationResponseDto createApplication(Long tenantId, Long propertyId, String coverLetter) {
         User tenant = userRepository.findById(tenantId)
                 .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
 
@@ -38,12 +39,11 @@ public class ApplicationService {
                 .coverLetter(coverLetter)
                 .build();
 
-        return applicationRepository.save(application);
+        return mapToDto(applicationRepository.save(application));
     }
 
-
     @Transactional
-    public Application updateApplicationStatus(Long landlordId, Long applicationId, ApplicationStatus newStatus) {
+    public ApplicationResponseDto updateApplicationStatus(Long landlordId, Long applicationId, ApplicationStatus newStatus) {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -61,19 +61,24 @@ public class ApplicationService {
             propertyRepository.save(property);
         }
 
-        return applicationRepository.save(application);
+        return mapToDto(applicationRepository.save(application));
     }
 
     @Transactional(readOnly = true)
-    public List<Application> getTenantApplications(Long tenantId) {
-        return applicationRepository.findByTenantId(tenantId);
+    public List<ApplicationResponseDto> getTenantApplications(Long tenantId) {
+        return applicationRepository.findByTenantId(tenantId).stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 
-
     @Transactional(readOnly = true)
-    public List<Application> getLandlordApplications(Long landlordId) {
-        return applicationRepository.findByProperty_LandlordId(landlordId);
-    }@Transactional
+    public List<ApplicationResponseDto> getLandlordApplications(Long landlordId) {
+        return applicationRepository.findByProperty_LandlordId(landlordId).stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
     public void deleteApplication(Long tenantId, Long applicationId) {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
@@ -89,8 +94,9 @@ public class ApplicationService {
 
         applicationRepository.delete(application);
     }
+
     @Transactional(readOnly = true)
-    public Application getApplicationById(Long applicationId, Long currentUserId, com.example.backend.entity.Role currentUserRole) {
+    public ApplicationResponseDto getApplicationById(Long applicationId, Long currentUserId, com.example.backend.entity.Role currentUserRole) {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -102,6 +108,35 @@ public class ApplicationService {
             throw new RuntimeException("Доступ запрещен. Это заявка не на ваше помещение.");
         }
 
-        return application;
+        return mapToDto(application);
+    }
+
+    // Вспомогательный метод маппинга Entity -> DTO
+    private ApplicationResponseDto mapToDto(Application app) {
+        String tenantName = "Не указано";
+        String tenantPhone = "Не указано";
+
+        if (app.getTenant().getTenantProfile() != null) {
+            tenantName = app.getTenant().getTenantProfile().getName();
+            tenantPhone = app.getTenant().getTenantProfile().getPhone();
+        }
+
+        return ApplicationResponseDto.builder()
+                .id(app.getId())
+                .status(app.getStatus())
+                .coverLetter(app.getCoverLetter())
+                .createdAt(app.getCreatedAt())
+                .property(ApplicationResponseDto.PropertyShortInfo.builder()
+                        .id(app.getProperty().getId())
+                        .title(app.getProperty().getTitle())
+                        .address(app.getProperty().getAddress())
+                        .build())
+                .tenant(ApplicationResponseDto.TenantShortInfo.builder()
+                        .id(app.getTenant().getId())
+                        .email(app.getTenant().getEmail())
+                        .name(tenantName)
+                        .phone(tenantPhone)
+                        .build())
+                .build();
     }
 }

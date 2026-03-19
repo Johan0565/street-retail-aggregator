@@ -1,7 +1,8 @@
 package com.example.backend.controller;
+
+import com.example.backend.dto.ApplicationResponseDto;
 import com.example.backend.dto.CreateApplicationRequest;
 import com.example.backend.dto.UpdateApplicationStatusRequest;
-import com.example.backend.entity.Application;
 import com.example.backend.entity.User;
 import com.example.backend.service.ApplicationService;
 import lombok.RequiredArgsConstructor;
@@ -23,12 +24,12 @@ public class ApplicationController {
 
     @PostMapping
     @PreAuthorize("hasRole('TENANT')")
-    public ResponseEntity<Application> createApplication(
+    public ResponseEntity<ApplicationResponseDto> createApplication(
             @RequestBody CreateApplicationRequest request,
             Principal principal) {
 
         Long tenantId = extractUserIdFromPrincipal(principal);
-        Application application = applicationService.createApplication(
+        ApplicationResponseDto application = applicationService.createApplication(
                 tenantId,
                 request.getPropertyId(),
                 request.getCoverLetter()
@@ -38,27 +39,27 @@ public class ApplicationController {
 
     @GetMapping("/my-requests")
     @PreAuthorize("hasRole('TENANT')")
-    public ResponseEntity<List<Application>> getTenantApplications(Principal principal) {
+    public ResponseEntity<List<ApplicationResponseDto>> getTenantApplications(Principal principal) {
         Long tenantId = extractUserIdFromPrincipal(principal);
         return ResponseEntity.ok(applicationService.getTenantApplications(tenantId));
     }
 
     @GetMapping("/incoming")
     @PreAuthorize("hasRole('LANDLORD')")
-    public ResponseEntity<List<Application>> getLandlordApplications(Principal principal) {
+    public ResponseEntity<List<ApplicationResponseDto>> getLandlordApplications(Principal principal) {
         Long landlordId = extractUserIdFromPrincipal(principal);
         return ResponseEntity.ok(applicationService.getLandlordApplications(landlordId));
     }
 
     @PatchMapping("/{applicationId}/status")
     @PreAuthorize("hasRole('LANDLORD')")
-    public ResponseEntity<Application> updateApplicationStatus(
+    public ResponseEntity<ApplicationResponseDto> updateApplicationStatus(
             @PathVariable Long applicationId,
             @RequestBody UpdateApplicationStatusRequest request,
             Principal principal) {
 
         Long landlordId = extractUserIdFromPrincipal(principal);
-        Application updatedApplication = applicationService.updateApplicationStatus(
+        ApplicationResponseDto updatedApplication = applicationService.updateApplicationStatus(
                 landlordId,
                 applicationId,
                 request.getStatus()
@@ -90,7 +91,7 @@ public class ApplicationController {
 
     @GetMapping("/{applicationId}")
     @PreAuthorize("hasAnyRole('TENANT', 'LANDLORD')")
-    public ResponseEntity<Application> getApplicationById(
+    public ResponseEntity<ApplicationResponseDto> getApplicationById(
             @PathVariable Long applicationId,
             Principal principal) {
         User user = (User) ((UsernamePasswordAuthenticationToken) principal).getPrincipal();

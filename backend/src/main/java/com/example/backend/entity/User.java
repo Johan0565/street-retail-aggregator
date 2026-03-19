@@ -1,5 +1,7 @@
 package com.example.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -14,6 +16,7 @@ import java.util.List;
 @Entity
 @Table(name = "users")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class User implements UserDetails {
 
     @Id
@@ -23,6 +26,7 @@ public class User implements UserDetails {
     @Column(nullable = false, unique = true)
     private String email;
 
+    @JsonIgnore
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
@@ -34,13 +38,16 @@ public class User implements UserDetails {
     private UserStatus status;
 
     @Column(name = "verification_code")
+    @JsonIgnore
     private String verificationCode;
 
     @Column(name = "code_expires_at")
+    @JsonIgnore
     private LocalDateTime codeExpiresAt;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
+    @JsonIgnore
     private LocalDateTime createdAt;
 
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
@@ -49,6 +56,7 @@ public class User implements UserDetails {
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private LandlordProfile landlordProfile;
     @Override
+    @JsonIgnore
     public Collection<? extends GrantedAuthority> getAuthorities() {
         // Возвращаем роль пользователя, добавляя префикс "ROLE_", как того требует Spring Security
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
@@ -60,6 +68,7 @@ public class User implements UserDetails {
     }
 
     @Override
+    @JsonIgnore
     public String getPassword() {
         return passwordHash; // Возвращаем захэшированный пароль
     }
@@ -72,11 +81,15 @@ public class User implements UserDetails {
     )
     private Set<Property> favoriteProperties;
     @Override
+    @JsonIgnore
     public boolean isAccountNonExpired() { return true; }
     @Override
+    @JsonIgnore
     public boolean isAccountNonLocked() { return status != UserStatus.BANNED; }
     @Override
+    @JsonIgnore
     public boolean isCredentialsNonExpired() { return true; }
     @Override
+    @JsonIgnore
     public boolean isEnabled() { return status == UserStatus.ACTIVE; }
 }
