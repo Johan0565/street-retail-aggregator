@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+// 1. Добавляем импорт нашего нового экрана:
+import 'screens/login_screen.dart';
+// Если у тебя MapScreen остался в этом же файле, YandexMapKit тоже оставляем
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 
 void main() {
@@ -13,46 +16,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Retail Aggregator',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF8C00)), // Можно сразу задать оранжевый как основной
         useMaterial3: true,
       ),
-      home: const MapScreen(),
+      // 2. МЕНЯЕМ СТАРТОВЫЙ ЭКРАН ЗДЕСЬ:
+      home: const LoginScreen(),
     );
   }
 }
 
-class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
-
-  @override
-  State<MapScreen> createState() => _MapScreenState();
-}
-
-class _MapScreenState extends State<MapScreen> {
-  late YandexMapController mapController;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Доступные помещения'),
-        backgroundColor: Colors.blueAccent,
-        foregroundColor: Colors.white,
-      ),
-      body: YandexMap(
-        onMapCreated: (YandexMapController controller) {
-          mapController = controller;
-          // Центрируем камеру на Москве при старте
-          mapController.moveCamera(
-            CameraUpdate.newCameraPosition(
-              const CameraPosition(
-                target: Point(latitude: 55.751244, longitude: 37.618423),
-                zoom: 12.0,
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
+// ... дальше ниже остается твой класс MapScreen ...
