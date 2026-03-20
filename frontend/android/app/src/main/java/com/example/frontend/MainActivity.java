@@ -1,4 +1,4 @@
-package com.example.your_project_name; // Не забудь оставить свой пакет!
+package com.example.frontend; // Твой пакет
 
 import androidx.annotation.NonNull;
 import io.flutter.embedding.android.FlutterActivity;
@@ -8,7 +8,7 @@ import com.yandex.mapkit.MapKitFactory;
 public class MainActivity extends FlutterActivity {
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
-        // API-ключ от Яндекс.Карт
+        // Ключ обязательно должен передаваться ДО вызова super
         MapKitFactory.setApiKey("1cdf3269-ddc3-4fc5-9f3b-40550c256370");
         super.configureFlutterEngine(flutterEngine);
     }
