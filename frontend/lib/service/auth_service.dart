@@ -50,14 +50,16 @@ Future<bool> login(String email, String password) async {
   }
 // Регистрация
   Future<bool> register(String email, String password, String role, String name, String inn, String phone) async {
+    final cleanEmail = email.trim();
+    final cleanPassword = password.trim();
     try {
-      final response = await _dio.post('/auth/register', data: {
-        'email': email,
-        'password': password,
-        'role': role, // 'TENANT' или 'LANDLORD'
-        'name': name,
-        'inn': inn,
-        'phone': phone,
+      final response = await _dio.post('/api/auth/register', data: {
+        'email': cleanEmail,
+        'password': cleanPassword,
+        'role': role.trim(), // 'TENANT' или 'LANDLORD'
+        'name': name.trim(),
+        'inn': inn.trim(),
+        'phone': phone.trim(),
       });
       return response.statusCode == 200;
     } catch (e) {
@@ -68,9 +70,10 @@ Future<bool> login(String email, String password) async {
 
   // Подтверждение кода
   Future<bool> verifyEmail(String email, String code) async {
+    final cleanEmail = email.trim();
     try {
-      final response = await _dio.post('/auth/verify', data: {
-        'email': email,
+      final response = await _dio.post('/api/auth/verify', data: {
+        'email': cleanEmail,
         'code': code,
       });
 
@@ -91,9 +94,10 @@ Future<bool> login(String email, String password) async {
 
   // Переотправка кода
   Future<bool> resendCode(String email) async {
+    final cleanEmail = email.trim();
     try {
-      final response = await _dio.post('/auth/resend-code', queryParameters: {
-        'email': email,
+      final response = await _dio.post('/api/auth/resend-code', queryParameters: {
+        'email': cleanEmail,
       });
       return response.statusCode == 200;
     } catch (e) {

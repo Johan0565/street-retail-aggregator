@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.Random;
 
 @Service
@@ -29,25 +30,58 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Пользователь с таким email уже существует");
+
+        // 1. Проверяем email на статус ACTIVE или очищаем старый мусор
+        Optional<User> existingUserByEmail = userRepository.findByEmail(request.getEmail());
+        if (existingUserByEmail.isPresent()) {
+            User user = existingUserByEmail.get();
+            if (user.getStatus() == UserStatus.ACTIVE) {
+                throw new RuntimeException("Пользователь с таким email уже существует");
+            } else {
+                // Пользователь не подтвердил почту. Удаляем старую запись.
+                userRepository.delete(user);
+                userRepository.flush(); // Принудительно применяем удаление в БД прямо сейчас
+            }
         }
 
-        // Генерируем 6-значный код
+        // 2. Проверяем ИНН (чтобы не было ошибки 500 при смене почты, но старом ИНН)
+        if (request.getRole() == Role.TENANT) {
+            Optional<TenantProfile> existingProfile = tenantProfileRepository.findByInn(request.getInn());
+            if (existingProfile.isPresent()) {
+                if (existingProfile.get().getUser().getStatus() == UserStatus.ACTIVE) {
+                    throw new RuntimeException("Арендатор с таким ИНН уже зарегистрирован");
+                } else {
+                    userRepository.delete(existingProfile.get().getUser());
+                    userRepository.flush();
+                }
+            }
+        } else if (request.getRole() == Role.LANDLORD) {
+            Optional<LandlordProfile> existingProfile = landlordProfileRepository.findByInn(request.getInn());
+            if (existingProfile.isPresent()) {
+                if (existingProfile.get().getUser().getStatus() == UserStatus.ACTIVE) {
+                    throw new RuntimeException("Арендодатель с таким ИНН уже зарегистрирован");
+                } else {
+                    userRepository.delete(existingProfile.get().getUser());
+                    userRepository.flush();
+                }
+            }
+        }
+
+        // 3. Создаем нового пользователя
         String code = String.format("%06d", new Random().nextInt(1000000));
 
         User user = User.builder()
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole())
-                .status(UserStatus.UNVERIFIED) // Статус - неподтвержден
+                .status(UserStatus.UNVERIFIED)
                 .verificationCode(code)
-                .codeExpiresAt(LocalDateTime.now().plusMinutes(2)) // Живет 2 минуты
+                .codeExpiresAt(LocalDateTime.now().plusMinutes(2))
                 .build();
 
         User savedUser = userRepository.save(user);
 
-        // ... (оставь здесь свой код создания TenantProfile или LandlordProfile без изменений) ...
+        // 4. Создаем профили
         if (request.getRole() == Role.TENANT) {
             TenantProfile tenantProfile = TenantProfile.builder()
                     .user(savedUser)
@@ -68,12 +102,12 @@ public class AuthService {
             landlordProfileRepository.save(landlordProfile);
         }
 
-        // Отправляем письмо
+        // 5. Отправляем письмо
         emailService.sendVerificationCode(savedUser.getEmail(), code);
 
         return AuthResponse.builder()
                 .message("Код подтверждения отправлен на вашу почту.")
-                .build(); // Токен пока не выдаем!
+                .build();
     }
 
     @Transactional
