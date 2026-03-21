@@ -37,6 +37,7 @@ dependencies:
   yandex_mapkit: ^4.2.1
   dio: ^5.9.2
   flutter_secure_storage: ^10.0.0
+  pinput: ^6.0.2
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-
+import '../service/auth_service.dart';
+import '../main.dart'; // Если MapScreen лежит в main.dart
+import 'register_screen.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -12,9 +14,48 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _rememberMe = false;
 
-  // Главный оранжевый цвет с твоего макета
+  // Добавляем переменные для загрузки и сервиса
+  bool _isLoading = false;
+  final AuthService _authService = AuthService();
+
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
+  // Функция обработки логина
+  Future<void> _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите email и пароль')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // Дергаем бэкенд
+    final success = await _authService.login(email, password);
+
+    if (!mounted) return; // Проверка, что экран еще открыт
+    setState(() => _isLoading = false);
+
+    if (success) {
+      // Успех! Переходим на карту и удаляем экран логина из истории
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const MyApp()),
+      );
+    } else {
+      // Ошибка
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Неверный email или пароль. Попробуйте снова.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -101,42 +142,49 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 30),
 
                 // 6. Оранжевая кнопка "Log in"
-                ElevatedButton(
-                  onPressed: () {
-                    // TODO: Здесь будет вызов API авторизации через Dio
-                    print("Login pressed");
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryOrange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Log in',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _handleLogin, // Отключаем кнопку во время загрузки
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryOrange,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 20),
+                elevation: 0,
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+              )
+                  : const Text(
+                'Log in',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 20),
 
-                // 7. Кнопка "Create an account"
-                TextButton(
-                  onPressed: () {
-                    // TODO: Переход на экран регистрации
-                  },
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.black54,
-                  ),
-                  child: const Text(
-                    'Create an account',
-                    style: TextStyle(
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
+            // 7. Кнопка "Create an account"
+            TextButton(
+              onPressed: () {
+                // Переход на экран регистрации
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                );
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.black54,
+              ),
+              child: const Text(
+                'Create an account',
+                style: TextStyle(
+                  decoration: TextDecoration.underline,
                 ),
+              ),
+            ),
               ],
             ),
           ),
