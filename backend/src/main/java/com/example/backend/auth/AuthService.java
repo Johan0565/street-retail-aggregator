@@ -66,6 +66,7 @@ public class AuthService {
                 }
             }
         }
+        
 
         // 3. Создаем нового пользователя
         String code = String.format("%06d", new Random().nextInt(1000000));
