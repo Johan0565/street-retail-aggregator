@@ -50,11 +50,28 @@ public class User implements UserDetails {
     @JsonIgnore
     private LocalDateTime createdAt;
 
+    @JsonIgnore
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private TenantProfile tenantProfile;
 
+    @JsonIgnore
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private LandlordProfile landlordProfile;
+
+    @JsonIgnore
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @ManyToMany
+    @JoinTable(
+            name = "favorites",
+            joinColumns = @JoinColumn(name = "tenant_id"),
+            inverseJoinColumns = @JoinColumn(name = "property_id")
+    )
+    private Set<Property> favoriteProperties;
     @Override
     @JsonIgnore
     public Collection<? extends GrantedAuthority> getAuthorities() {
@@ -73,13 +90,6 @@ public class User implements UserDetails {
         return passwordHash; // Возвращаем захэшированный пароль
     }
     // Избранное (Связь Many-to-Many с Property)
-    @ManyToMany
-    @JoinTable(
-            name = "favorites",
-            joinColumns = @JoinColumn(name = "tenant_id"),
-            inverseJoinColumns = @JoinColumn(name = "property_id")
-    )
-    private Set<Property> favoriteProperties;
     @Override
     @JsonIgnore
     public boolean isAccountNonExpired() { return true; }

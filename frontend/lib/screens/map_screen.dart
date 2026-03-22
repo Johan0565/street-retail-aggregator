@@ -1,7 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:frontend/screens/property.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
+
+import '../service/property_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -12,8 +15,13 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   late YandexMapController mapController;
-  final Color _primaryOrange = const Color(0xFFFF8C00);
+  final PropertyService _propertyService = PropertyService();
 
+  // Список объектов (маркеров) для отображения на карте
+  List<MapObject> mapObjects = [];
+  bool _isLoading = true;
+
+  final Color _primaryOrange = const Color(0xFFFF8C00);
   // Кастомный стиль: белая земля, светло-серые реки, темные дороги
   final String _mapStyle = '''[
     {
@@ -6643,36 +6651,118 @@ class _MapScreenState extends State<MapScreen> {
   ''';
 
   @override
+  void initState() {
+    super.initState();
+    // Начинаем загрузку данных сразу при открытии экрана
+    _loadProperties();
+  }
+
+  Future<void> _loadProperties() async {
+    setState(() => _isLoading = true);
+
+    final properties = await _propertyService.getAllProperties();
+
+    final placemarks = properties.map((property) {
+      return PlacemarkMapObject(
+        mapId: MapObjectId('property_${property?.id}'),
+        point: Point(latitude: property.latitude, longitude: property.longitude),
+        opacity: 1,
+        icon: PlacemarkIcon.single(
+          PlacemarkIconStyle(
+            // Укажи здесь путь к твоей иконке маркера!
+            image: BitmapDescriptor.fromAssetImage('assets/marker.png'),
+            scale: 0.2, // Подбери размер иконки (зависит от исходной картинки)
+          ),
+        ),
+        onTap: (PlacemarkMapObject self, Point point) {
+          // Действие при клике на маркер
+          _showPropertyDetails(property);
+        },
+      );
+    }).toList();
+
+    setState(() {
+      mapObjects = placemarks;
+      _isLoading = false;
+    });
+  }
+
+  // Заглушка для шторки, которая будет выезжать при клике на маркер
+  void _showPropertyDetails(Property property) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                property.title,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${property.pricePerMonth} ₽ / мес',
+                style: TextStyle(fontSize: 18, color: _primaryOrange, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Подробнее', style: TextStyle(color: Colors.white)),
+                ),
+              )
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Снимаем ограничение, чтобы карта заполняла весь экран, даже под челкой/статус-баром
       body: Stack(
         children: [
-          // --- СЛОЙ 1: КАРТА ---
+          // КАРТА
           YandexMap(
+            mapObjects: mapObjects, // Передаем наши маркеры в карту
             onMapCreated: (YandexMapController controller) {
               mapController = controller;
               mapController.setMapStyle(_mapStyle);
-
-              // Центрируем на Москве (или твоем городе)
               mapController.moveCamera(
                 CameraUpdate.newCameraPosition(
                   const CameraPosition(
                     target: Point(latitude: 55.751244, longitude: 37.618423),
-                    zoom: 13.0,
+                    zoom: 12.0,
                   ),
                 ),
               );
             },
           ),
 
-          // --- СЛОЙ 2: ПЛАВАЮЩИЙ UI (Поиск и Фильтры) ---
+          // ИНДИКАТОР ЗАГРУЗКИ
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.black),
+            ),
+
+          // ПЛАВАЮЩИЙ UI
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
               child: Row(
                 children: [
-                  // Строка поиска (растягивается на свободное место)
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -6686,23 +6776,21 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ],
                       ),
-                      child: TextField(
+                      child: const TextField(
                         decoration: InputDecoration(
-                          hintText: 'Поиск адреса или района...',
-                          hintStyle: const TextStyle(color: Colors.black38),
-                          prefixIcon: const Icon(Icons.search, color: Colors.black54),
+                          hintText: 'Поиск адреса...',
+                          hintStyle: TextStyle(color: Colors.black38),
+                          prefixIcon: Icon(Icons.search, color: Colors.black54),
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          contentPadding: EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-
-                  // Кнопка фильтров
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.black87, // Поддерживаем стиль нижней панели
+                      color: Colors.black87,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
@@ -6714,10 +6802,7 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     child: IconButton(
                       icon: Icon(Icons.tune, color: _primaryOrange),
-                      onPressed: () {
-                        // TODO: Открыть шторку фильтров (Bottom Sheet)
-                        print("Фильтры нажаты");
-                      },
+                      onPressed: () {},
                       padding: const EdgeInsets.all(12),
                     ),
                   ),
