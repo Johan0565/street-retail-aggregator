@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'property_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/property.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
@@ -6660,31 +6660,40 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _loadProperties() async {
     setState(() => _isLoading = true);
 
-    final properties = await _propertyService.getAllProperties();
+    print('--- НАЧИНАЕМ ЗАГРУЗКУ ПОМЕЩЕНИЙ ---');
+    try {
+      final properties = await _propertyService.getAllProperties();
+      print('--- ЗАГРУЖЕНО ПОМЕЩЕНИЙ: ${properties.length} ---');
 
-    final placemarks = properties.map((property) {
-      return PlacemarkMapObject(
-        mapId: MapObjectId('property_${property?.id}'),
-        point: Point(latitude: property.latitude, longitude: property.longitude),
-        opacity: 1,
-        icon: PlacemarkIcon.single(
-          PlacemarkIconStyle(
-            // Укажи здесь путь к твоей иконке маркера!
-            image: BitmapDescriptor.fromAssetImage('assets/marker.png'),
-            scale: 0.2, // Подбери размер иконки (зависит от исходной картинки)
+      final placemarks = properties.map((property) {
+        print('Создаем маркер для: ${property.title} [${property.latitude}, ${property.longitude}]');
+
+        return PlacemarkMapObject(
+          mapId: MapObjectId('property_${property.id}'),
+          point: Point(latitude: property.latitude, longitude: property.longitude),
+          opacity: 1,
+          icon: PlacemarkIcon.single(
+            PlacemarkIconStyle(
+              image: BitmapDescriptor.fromAssetImage('assets/gps.png'),
+              scale: 0.2, // Убедись, что масштаб не слишком маленький (попробуй 1.0, если картинка мелкая)
+            ),
           ),
-        ),
-        onTap: (PlacemarkMapObject self, Point point) {
-          // Действие при клике на маркер
-          _showPropertyDetails(property);
-        },
-      );
-    }).toList();
+          onTap: (PlacemarkMapObject self, Point point) {
+            _showPropertyDetails(property);
+          },
+        );
+      }).toList();
 
-    setState(() {
-      mapObjects = placemarks;
-      _isLoading = false;
-    });
+      setState(() {
+        mapObjects = placemarks;
+        _isLoading = false;
+      });
+      print('--- МАРКЕРЫ ПЕРЕДАНЫ В КАРТУ ---');
+
+    } catch (e) {
+      print('--- ОШИБКА ПРИ СОЗДАНИИ МАРКЕРОВ: $e ---');
+      setState(() => _isLoading = false);
+    }
   }
 
   // Заглушка для шторки, которая будет выезжать при клике на маркер
@@ -6711,15 +6720,33 @@ class _MapScreenState extends State<MapScreen> {
                 style: TextStyle(fontSize: 18, color: _primaryOrange, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 24),
+
+              // ПРАВИЛЬНАЯ КНОПКА
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    // Сначала закрываем шторку (BottomSheet)
+                    Navigator.pop(context);
+                    // Затем открываем экран с деталями
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PropertyDetailsScreen(property: property),
+                      ),
+                    );
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                  child: const Text('Подробнее', style: TextStyle(color: Colors.white)),
+                  child: const Text(
+                    'Подробнее',
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               )
             ],
