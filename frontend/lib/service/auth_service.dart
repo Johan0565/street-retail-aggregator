@@ -8,10 +8,10 @@ class AuthService {
   static String get _baseUrl {
     if (Platform.isAndroid) {
       // Для Android-эмулятора 10.0.2.2 — это "хост-машина" (твой комп)
-      return 'http://10.0.2.2:8080/api';
+      return 'http://10.0.2.2:8080';
     } else {
       // Для Windows Desktop или iOS симулятора
-      return 'http://127.0.0.1:8080/api';
+      return 'http://127.0.0.1:8080';
     }
   }
 
