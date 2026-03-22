@@ -1,9 +1,25 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AuthService {
 // 1. Оставляем в baseUrl ТОЛЬКО хост и порт (без /api)
-final Dio _dio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:8080'));
+  static String get _baseUrl {
+    if (Platform.isAndroid) {
+      // Для Android-эмулятора 10.0.2.2 — это "хост-машина" (твой комп)
+      return 'http://10.0.2.2:8080/api';
+    } else {
+      // Для Windows Desktop или iOS симулятора
+      return 'http://127.0.0.1:8080/api';
+    }
+  }
+
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: _baseUrl, // Используем наш умный URL
+    connectTimeout: const Duration(seconds: 5),
+    receiveTimeout: const Duration(seconds: 5),
+  ));
 final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
 Future<bool> login(String email, String password) async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/screens/tenant_main_screen.dart';
 import '../service/auth_service.dart';
 import '../main.dart'; // Если MapScreen лежит в main.dart
 import 'register_screen.dart';
@@ -44,7 +45,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Успех! Переходим на карту и удаляем экран логина из истории
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const MyApp()),
+        MaterialPageRoute(builder: (context) => const TenantMainScreen()),
       );
     } else {
       // Ошибка

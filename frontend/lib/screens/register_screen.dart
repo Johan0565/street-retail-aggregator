@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:frontend/screens/tenant_main_screen.dart';
 import 'package:pinput/pinput.dart';
 import '../service/auth_service.dart';
 import '../main.dart'; // Для перехода на MapScreen
@@ -82,7 +83,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Navigator.pop(context);
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const MyApp()),
+              MaterialPageRoute(builder: (context) => const TenantMainScreen()),
             );
           },
         );
