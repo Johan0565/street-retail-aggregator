@@ -21,7 +21,9 @@ class AuthService {
     receiveTimeout: const Duration(seconds: 5),
   ));
 final FlutterSecureStorage _storage = const FlutterSecureStorage();
-
+Future<String?> getUserRole() async {
+  return await _storage.read(key: 'user_role');
+}
 Future<bool> login(String email, String password) async {
   // 1. Очищаем от случайных пробелов в начале и конце
   final cleanEmail = email.trim();

@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:frontend/screens/tenant_main_screen.dart';
 import 'package:pinput/pinput.dart';
 import '../service/auth_service.dart';
-import '../main.dart'; // Для перехода на MapScreen
+import '../main.dart';
+import 'LandlordMainScreen.dart'; // Для перехода на MapScreen
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -78,13 +79,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
           onEmailEditTap: () {
             Navigator.pop(context); // Закрываем шторку, возвращаемся к форме
           },
-          onVerified: () {
-            // Код верный! Закрываем шторку и переходим на карту
-            Navigator.pop(context);
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const TenantMainScreen()),
-            );
+          onVerified: () async {
+            // Читаем роль после успешного ввода кода
+            final role = await _authService.getUserRole();
+            if (!context.mounted) return;
+
+            Navigator.pop(context); // Закрываем шторку с пин-кодом
+
+            if (role == 'LANDLORD') {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const LandlordMainScreen()),
+              );
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const TenantMainScreen()),
+              );
+            }
           },
         );
       },

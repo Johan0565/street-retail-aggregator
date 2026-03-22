@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/screens/tenant_main_screen.dart';
 import '../service/auth_service.dart';
 import '../main.dart'; // Если MapScreen лежит в main.dart
+import 'LandlordMainScreen.dart';
 import 'register_screen.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,11 +43,22 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = false);
 
     if (success) {
-      // Успех! Переходим на карту и удаляем экран логина из истории
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const TenantMainScreen()),
-      );
+      // Читаем сохраненную роль
+      final role = await _authService.getUserRole();
+      if (!mounted) return;
+
+      // Маршрутизация на основе роли
+      if (role == 'LANDLORD') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LandlordMainScreen()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const TenantMainScreen()),
+        );
+      }
     } else {
       // Ошибка
       ScaffoldMessenger.of(context).showSnackBar(
