@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/property.dart';
-
 import '../service/application_service.dart';
 import '../service/favorite_service.dart';
-import '../service/application_service.dart';
-import '../service/favorite_service.dart'; // Подключим новый сервис (создадим на шаге 2)
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
@@ -18,16 +15,35 @@ class PropertyDetailsScreen extends StatefulWidget {
 class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   final Color primaryOrange = const Color(0xFFFF8C00);
 
-  // Состояние: добавлено ли в избранное
-  // (В идеале бэкенд должен присылать это поле вместе с Property, но пока управляем локально)
   bool _isFavorite = false;
   bool _isLoadingFavorite = false;
+  bool _isCheckingInitialState = true; // Индикатор начальной проверки лайка
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIfFavorite(); // Проверяем статус при открытии экрана
+  }
+
+  // --- НОВЫЙ МЕТОД: Проверяем, в избранном ли мы уже ---
+  Future<void> _checkIfFavorite() async {
+    final favorites = await FavoriteService().getMyFavorites();
+
+    if (!mounted) return;
+
+    // Ищем, есть ли ID текущего помещения в списке избранных
+    final isFav = favorites.any((favProperty) => favProperty.id == widget.property.id);
+
+    setState(() {
+      _isFavorite = isFav;
+      _isCheckingInitialState = false;
+    });
+  }
 
   // Метод для переключения состояния "Избранное"
   Future<void> _toggleFavorite() async {
     setState(() => _isLoadingFavorite = true);
 
-    // Вызываем сервис (если было в избранном - удаляем, если нет - добавляем)
     final success = _isFavorite
         ? await FavoriteService().removeFromFavorites(widget.property.id)
         : await FavoriteService().addToFavorites(widget.property.id);
@@ -36,12 +52,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
     if (success) {
       setState(() {
-        _isFavorite = !_isFavorite; // Меняем иконку
+        _isFavorite = !_isFavorite;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(_isFavorite ? 'Добавлено в избранное' : 'Удалено из избранного'),
           duration: const Duration(seconds: 1),
+          backgroundColor: _isFavorite ? Colors.green : Colors.grey[800],
         ),
       );
     } else {
@@ -140,15 +157,15 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         iconTheme: const IconThemeData(color: Colors.black),
         title: const Text('Детали помещения', style: TextStyle(color: Colors.black)),
         actions: [
-          // КНОПКА "ИЗБРАННОЕ" В ПРАВОМ ВЕРХНЕМ УГЛУ
+          // КНОПКА "ИЗБРАННОЕ"
           IconButton(
-            icon: _isLoadingFavorite
+            icon: _isCheckingInitialState || _isLoadingFavorite
                 ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
                 : Icon(
               _isFavorite ? Icons.favorite : Icons.favorite_border,
               color: _isFavorite ? primaryOrange : Colors.black,
             ),
-            onPressed: _isLoadingFavorite ? null : _toggleFavorite,
+            onPressed: (_isCheckingInitialState || _isLoadingFavorite) ? null : _toggleFavorite,
           ),
           const SizedBox(width: 8),
         ],
