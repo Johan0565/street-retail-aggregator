@@ -15,13 +15,26 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _rememberMe = false;
-
-  // Добавляем переменные для загрузки и сервиса
   bool _isLoading = false;
   final AuthService _authService = AuthService();
-
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedData();
+  }
+
+  // Загружаем почту, если пользователь ранее ставил галочку
+  Future<void> _loadSavedData() async {
+    final savedEmail = await _authService.getSavedEmail();
+    if (savedEmail != null) {
+      setState(() {
+        _emailController.text = savedEmail;
+        _rememberMe = true;
+      });
+    }
+  }
   // Функция обработки логина
   Future<void> _handleLogin() async {
     final email = _emailController.text.trim();
@@ -37,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     // Дергаем бэкенд
-    final success = await _authService.login(email, password);
+    final success = await _authService.login(email, password, _rememberMe);
 
     if (!mounted) return; // Проверка, что экран еще открыт
     setState(() => _isLoading = false);

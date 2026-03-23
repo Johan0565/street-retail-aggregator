@@ -26,13 +26,46 @@ final FlutterSecureStorage _storage = const FlutterSecureStorage();
 Future<String?> getUserRole() async {
   return await _storage.read(key: 'user_role');
 }
+
+
+  Future<bool> updateProfile(String name, String phone) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final role = await _storage.read(key: 'user_role');
+
+      // Определяем нужный эндпоинт в зависимости от роли
+      final String endpoint = (role == 'LANDLORD')
+          ? '/api/profiles/landlord/me'
+          : '/api/profiles/tenant/me';
+
+      final response = await _dio.put(
+        endpoint,
+        data: {
+          // У арендодателя поле называется companyName, а у арендатора - name
+          if (role == 'LANDLORD') 'companyName': name else 'name': name,
+          'phone': phone,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Ошибка при обновлении профиля: $e');
+      return false;
+    }
+  }
   Future<UserProfile?> getCurrentUserProfile() async {
     try {
       final token = await _storage.read(key: 'jwt_token');
+      final role = await _storage.read(key: 'user_role'); // Читаем сохраненную роль!
 
-      // ИСПОЛЬЗУЕМ ТВОЙ РЕАЛЬНЫЙ ЭНДПОИНТ
+      // Выбираем эндпоинт в зависимости от роли
+      final String endpoint = (role == 'LANDLORD')
+          ? '/api/profiles/landlord/me'
+          : '/api/profiles/tenant/me';
+
       final response = await _dio.get(
-        '/profiles/tenant/me',
+        endpoint,
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
 
@@ -40,8 +73,12 @@ Future<String?> getUserRole() async {
         return UserProfile.fromJson(response.data);
       }
       return null;
+    } on DioException catch (e) {
+      // Расширенное логирование, чтобы точно видеть ошибку от сервера
+      print('Ошибка API при загрузке профиля: ${e.response?.statusCode} - ${e.response?.data}');
+      return null;
     } catch (e) {
-      print('Ошибка при загрузке профиля: $e');
+      print('Неизвестная ошибка профиля: $e');
       return null;
     }
   }
@@ -52,22 +89,12 @@ Future<String?> getUserRole() async {
     await _storage.delete(key: 'jwt_token');
     await _storage.delete(key: 'user_role');
   }
-Future<bool> login(String email, String password) async {
-  // 1. Очищаем от случайных пробелов в начале и конце
-  final cleanEmail = email.trim();
-  final cleanPassword = password.trim();
-
-  // 2. Давай выведем их в консоль в кавычках, чтобы визуально убедиться,
-  // что внутри нет переносов строк или других скрытых символов
-  print('Пытаемся войти...');
-  print('Email: "$cleanEmail"');
-  print('Password: "$cleanPassword"');
-
-  try {
-    final response = await _dio.post('/api/auth/login', data: {
-      'email': cleanEmail, // Отправляем очищенные данные
-      'password': cleanPassword,
-    });
+  Future<bool> login(String email, String password, bool rememberMe) async {
+    try {
+      final response = await _dio.post('/api/auth/login', data: {
+        'email': email,
+        'password': password,
+      });
 
       if (response.statusCode == 200) {
         final token = response.data['token'];
@@ -76,21 +103,19 @@ Future<bool> login(String email, String password) async {
         await _storage.write(key: 'jwt_token', value: token);
         await _storage.write(key: 'user_role', value: role);
 
+        // --- ЛОГИКА REMEMBER ME ---
+        await _storage.write(key: 'remember_me', value: rememberMe.toString());
+        if (rememberMe) {
+          await _storage.write(key: 'saved_email', value: email);
+        } else {
+          await _storage.delete(key: 'saved_email');
+        }
+
         return true;
       }
       return false;
-    } on DioException catch (e) {
-      // Выводим статус-код и принудительно показываем сообщение Dio, если данных нет
-      final statusCode = e.response?.statusCode;
-      final serverData = e.response?.data;
-
-      print('Ошибка входа! Код: $statusCode');
-      print('Ответ сервера: "${serverData}"');
-      print('Системная ошибка Dio: ${e.message}');
-
-      return false;
     } catch (e) {
-      print('Неизвестная ошибка: $e');
+      print('Ошибка входа: $e');
       return false;
     }
   }
@@ -153,5 +178,26 @@ Future<bool> login(String email, String password) async {
   }
   Future<String?> getToken() async {
     return await _storage.read(key: 'jwt_token');
+  }
+  Future<String?> getSavedEmail() async {
+    return await _storage.read(key: 'saved_email');
+  }
+
+  // Метод, который решает, куда отправить юзера при старте приложения
+  Future<String?> checkAutoLogin() async {
+    final rememberMe = await _storage.read(key: 'remember_me');
+
+    // Если галочка стояла, проверяем токен
+    if (rememberMe == 'true') {
+      final token = await _storage.read(key: 'jwt_token');
+      final role = await _storage.read(key: 'user_role');
+      if (token != null && role != null) {
+        return role; // Автологин успешен! Возвращаем роль
+      }
+    } else {
+      // Если галочки не было, значит сессия была только на один раз. Стираем токен.
+      await logout();
+    }
+    return null; // Нужна авторизация
   }
 }
