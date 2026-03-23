@@ -1,16 +1,137 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/property.dart';
-import 'property.dart';
 
-class PropertyDetailsScreen extends StatelessWidget {
+import '../service/application_service.dart';
+import '../service/favorite_service.dart';
+import '../service/application_service.dart';
+import '../service/favorite_service.dart'; // Подключим новый сервис (создадим на шаге 2)
+
+class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
 
   const PropertyDetailsScreen({super.key, required this.property});
 
   @override
-  Widget build(BuildContext context) {
-    final Color primaryOrange = const Color(0xFFFF8C00);
+  State<PropertyDetailsScreen> createState() => _PropertyDetailsScreenState();
+}
 
+class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
+  final Color primaryOrange = const Color(0xFFFF8C00);
+
+  // Состояние: добавлено ли в избранное
+  // (В идеале бэкенд должен присылать это поле вместе с Property, но пока управляем локально)
+  bool _isFavorite = false;
+  bool _isLoadingFavorite = false;
+
+  // Метод для переключения состояния "Избранное"
+  Future<void> _toggleFavorite() async {
+    setState(() => _isLoadingFavorite = true);
+
+    // Вызываем сервис (если было в избранном - удаляем, если нет - добавляем)
+    final success = _isFavorite
+        ? await FavoriteService().removeFromFavorites(widget.property.id)
+        : await FavoriteService().addToFavorites(widget.property.id);
+
+    setState(() => _isLoadingFavorite = false);
+
+    if (success) {
+      setState(() {
+        _isFavorite = !_isFavorite; // Меняем иконку
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isFavorite ? 'Добавлено в избранное' : 'Удалено из избранного'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ошибка сети'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _showApplicationSheet(BuildContext context, Property property) {
+    final TextEditingController letterController = TextEditingController();
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Оставить заявку', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: letterController,
+                    maxLines: 5,
+                    decoration: InputDecoration(
+                      hintText: 'Напишите сопроводительное письмо арендодателю...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: primaryOrange, width: 2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                        final text = letterController.text.trim();
+                        if (text.isEmpty) return;
+
+                        setStateSheet(() => isSubmitting = true);
+                        final success = await ApplicationService().createApplication(property.id, text);
+                        setStateSheet(() => isSubmitting = false);
+
+                        if (success) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Заявка успешно отправлена!'), backgroundColor: Colors.green),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryOrange,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: isSubmitting
+                          ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Text('Отправить', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -18,83 +139,68 @@ class PropertyDetailsScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
         title: const Text('Детали помещения', style: TextStyle(color: Colors.black)),
+        actions: [
+          // КНОПКА "ИЗБРАННОЕ" В ПРАВОМ ВЕРХНЕМ УГЛУ
+          IconButton(
+            icon: _isLoadingFavorite
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : Icon(
+              _isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: _isFavorite ? primaryOrange : Colors.black,
+            ),
+            onPressed: _isLoadingFavorite ? null : _toggleFavorite,
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Заглушка для фото (пока в БД массив images пустой)
             Container(
               height: 200,
               width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(16),
-              ),
+              decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(16)),
               child: const Icon(Icons.storefront, size: 80, color: Colors.black26),
             ),
             const SizedBox(height: 24),
-
-            // Цена и Заголовок
-            Text(
-              '${property.pricePerMonth} ₽ / мес',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: primaryOrange),
-            ),
+            Text('${widget.property.pricePerMonth} ₽ / мес', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: primaryOrange)),
             const SizedBox(height: 8),
-            Text(
-              property.title,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
+            Text(widget.property.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Row(
               children: [
                 const Icon(Icons.location_on, color: Colors.black54, size: 18),
                 const SizedBox(width: 4),
-                Expanded(
-                  child: Text(property.address, style: const TextStyle(color: Colors.black54, fontSize: 16)),
-                ),
+                Expanded(child: Text(widget.property.address, style: const TextStyle(color: Colors.black54, fontSize: 16))),
               ],
             ),
             const SizedBox(height: 24),
-
-            // Плашки характеристик
             Wrap(
               spacing: 12,
               runSpacing: 12,
               children: [
-                _buildSpecChip(Icons.bolt, '${property.powerKw} кВт'),
-                if (property.hasWater) _buildSpecChip(Icons.water_drop, 'Вода'),
-                if (property.hasVentilation) _buildSpecChip(Icons.air, 'Вытяжка'),
-                if (property.hasSeparateEntrance) _buildSpecChip(Icons.door_front_door, 'Отд. вход'),
+                _buildSpecChip(Icons.bolt, '${widget.property.powerKw} кВт'),
+                if (widget.property.hasWater) _buildSpecChip(Icons.water_drop, 'Вода'),
+                if (widget.property.hasVentilation) _buildSpecChip(Icons.air, 'Вытяжка'),
+                if (widget.property.hasSeparateEntrance) _buildSpecChip(Icons.door_front_door, 'Отд. вход'),
               ],
             ),
             const SizedBox(height: 24),
-
-            // Описание
             const Text('Описание', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            Text(
-              property.description,
-              style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.black87),
-            ),
-
-            // Отступ снизу, чтобы плавающая кнопка не перекрывала текст
+            Text(widget.property.description, style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.black87)),
             const SizedBox(height: 100),
           ],
         ),
       ),
-
-      // Плавающая кнопка заявки
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: ElevatedButton(
-          onPressed: () {
-            // TODO: Открыть форму создания заявки
-            print("Нажата кнопка заявки");
-          },
+          onPressed: () => _showApplicationSheet(context, widget.property),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -106,7 +212,6 @@ class PropertyDetailsScreen extends StatelessWidget {
     );
   }
 
-  // Вспомогательный виджет для красивых бейджей характеристик
   Widget _buildSpecChip(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

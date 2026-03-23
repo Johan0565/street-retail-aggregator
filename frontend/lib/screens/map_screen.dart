@@ -3,7 +3,7 @@ import 'property_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/screens/property.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
-
+import 'favorites_screen.dart';
 import '../service/property_service.dart';
 
 class MapScreen extends StatefulWidget {

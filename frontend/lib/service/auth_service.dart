@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../screens/user_profile.dart';
+
 class AuthService {
 // 1. Оставляем в baseUrl ТОЛЬКО хост и порт (без /api)
   static String get _baseUrl {
@@ -24,6 +26,32 @@ final FlutterSecureStorage _storage = const FlutterSecureStorage();
 Future<String?> getUserRole() async {
   return await _storage.read(key: 'user_role');
 }
+  Future<UserProfile?> getCurrentUserProfile() async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+
+      // ИСПОЛЬЗУЕМ ТВОЙ РЕАЛЬНЫЙ ЭНДПОИНТ
+      final response = await _dio.get(
+        '/profiles/tenant/me',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      if (response.statusCode == 200) {
+        return UserProfile.fromJson(response.data);
+      }
+      return null;
+    } catch (e) {
+      print('Ошибка при загрузке профиля: $e');
+      return null;
+    }
+  }
+
+  // Выход из аккаунта
+  Future<void> logout() async {
+    // Просто удаляем токены из защищенного хранилища
+    await _storage.delete(key: 'jwt_token');
+    await _storage.delete(key: 'user_role');
+  }
 Future<bool> login(String email, String password) async {
   // 1. Очищаем от случайных пробелов в начале и конце
   final cleanEmail = email.trim();

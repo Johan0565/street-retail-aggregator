@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'favorites_screen.dart';
 import 'map_screen.dart';
+import 'my_applications_screen.dart';
+import 'profile_screen.dart';
 // Импортируем карту (перенесем ее код в отдельный файл чуть позже)
 // import 'map_screen.dart';
 
@@ -17,10 +20,10 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
 
   // Список экранов для каждой вкладки
   final List<Widget> _screens = [
-    const MapScreen(),// Заглушка для карты (заменим на твою Яндекс Карту)
-    const Center(child: Text('Избранное', style: TextStyle(fontSize: 24))),
-    const Center(child: Text('Мои заявки', style: TextStyle(fontSize: 24))),
-    const Center(child: Text('Профиль', style: TextStyle(fontSize: 24))),
+    const MapScreen(),
+    const FavoritesScreen(),
+    const MyApplicationsScreen(),
+    const ProfileScreen(),
   ];
 
   @override

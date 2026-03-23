@@ -24,7 +24,41 @@ class PropertyService {
     receiveTimeout: const Duration(seconds: 5),
   ));
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  Future<bool> toggleFavorite(int propertyId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.post(
+        '/properties/$propertyId/favorite', // Эндпоинт твоего бэкенда
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      print('Ошибка при изменении избранного: $e');
+      return false;
+    }
+  }
+  Future<List<Property>> getFavoriteProperties() async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.get(
+        '/properties/favorites', // Эндпоинт твоего бэкенда
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
 
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data;
+        return data.map((json) => Property.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Ошибка при загрузке избранного: $e');
+      return [];
+    }
+  }
   Future<List<Property>> getAllProperties() async {
     try {
 
