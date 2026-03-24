@@ -28,32 +28,6 @@ Future<String?> getUserRole() async {
 }
 
 
-  Future<bool> updateProfile(String name, String phone) async {
-    try {
-      final token = await _storage.read(key: 'jwt_token');
-      final role = await _storage.read(key: 'user_role');
-
-      // Определяем нужный эндпоинт в зависимости от роли
-      final String endpoint = (role == 'LANDLORD')
-          ? '/api/profiles/landlord/me'
-          : '/api/profiles/tenant/me';
-
-      final response = await _dio.put(
-        endpoint,
-        data: {
-          // У арендодателя поле называется companyName, а у арендатора - name
-          if (role == 'LANDLORD') 'companyName': name else 'name': name,
-          'phone': phone,
-        },
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-
-      return response.statusCode == 200;
-    } catch (e) {
-      print('Ошибка при обновлении профиля: $e');
-      return false;
-    }
-  }
   Future<UserProfile?> getCurrentUserProfile() async {
     try {
       final token = await _storage.read(key: 'jwt_token');
@@ -199,5 +173,31 @@ Future<String?> getUserRole() async {
       await logout();
     }
     return null; // Нужна авторизация
+  }
+  Future<bool> updateProfile(String name, String phone, int? categoryId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final role = await _storage.read(key: 'user_role');
+
+      final String endpoint = (role == 'LANDLORD')
+          ? '/api/profiles/landlord/me'
+          : '/api/profiles/tenant/me';
+
+      final response = await _dio.put(
+        endpoint,
+        data: {
+          if (role == 'LANDLORD') 'companyName': name else 'name': name,
+          'phone': phone,
+          // Отправляем ID категории на сервер (ожидаем, что бэк принимает targetBusinessCategoryId)
+          if (role == 'TENANT' && categoryId != null) 'targetBusinessCategoryId': categoryId,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Ошибка при обновлении профиля: $e');
+      return false;
+    }
   }
 }

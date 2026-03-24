@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'user_profile.dart';
 import '../service/auth_service.dart';
 import 'login_screen.dart';
-
+import 'business_category.dart';
+import '../service/category_service.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -110,11 +111,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // --- НОВЫЙ МЕТОД: Редактирование профиля ---
   void _showEditProfileSheet(UserProfile currentProfile) {
-    // Инициализируем контроллеры текущими данными пользователя
     final nameController = TextEditingController(text: currentProfile.name);
     final phoneController = TextEditingController(text: currentProfile.phone);
+
+    // Состояние для выпадающего списка
+    int? selectedCategoryId = currentProfile.businessCategoryId;
     bool isSubmitting = false;
 
     showModalBottomSheet(
@@ -140,7 +142,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const Text('Редактировать профиль', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
 
-                  // Поле Имя
                   TextField(
                     controller: nameController,
                     decoration: const InputDecoration(
@@ -151,7 +152,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Поле Телефон
                   TextField(
                     controller: phoneController,
                     keyboardType: TextInputType.phone,
@@ -161,9 +161,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // НОВЫЙ БЛОК: Выбор ниши (загружаем асинхронно)
+                  FutureBuilder<List<BusinessCategory>>(
+                    future: CategoryService().getCategories(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final categories = snapshot.data ?? [];
+
+                      // Проверяем, существует ли сохраненный ID в загруженном списке
+                      // Если нет (например, категорию удалили на бэке), сбрасываем выбор
+                      if (selectedCategoryId != null && !categories.any((c) => c.id == selectedCategoryId)) {
+                        selectedCategoryId = null;
+                      }
+
+                      return DropdownButtonFormField<int>(
+                        value: selectedCategoryId,
+                        decoration: const InputDecoration(
+                          labelText: 'Целевая ниша бизнеса',
+                          prefixIcon: Icon(Icons.storefront),
+                          border: OutlineInputBorder(),
+                        ),
+                        items: categories.map((category) {
+                          return DropdownMenuItem<int>(
+                            value: category.id,
+                            child: Text(category.name),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setStateSheet(() => selectedCategoryId = value);
+                        },
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
 
-                  // Кнопка сохранения
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -175,13 +211,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         final success = await _authService.updateProfile(
                           nameController.text.trim(),
                           phoneController.text.trim(),
+                          selectedCategoryId, // Передаем выбранный ID на бэкенд
                         );
 
                         setStateSheet(() => isSubmitting = false);
 
                         if (success) {
-                          Navigator.pop(context); // Закрываем шторку
-                          _loadProfile(); // Перезагружаем профиль, чтобы данные на экране обновились
+                          Navigator.pop(context);
+                          _loadProfile();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Данные успешно обновлены'), backgroundColor: Colors.green),
                           );
