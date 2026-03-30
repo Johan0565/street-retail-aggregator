@@ -63,6 +63,7 @@ class PropertyService {
     }
   }
   // Создание нового объекта недвижимости
+  // Создание нового объекта недвижимости
   Future<bool> createProperty({
     required String title,
     required String description,
@@ -72,12 +73,14 @@ class PropertyService {
     required bool hasWater,
     required bool hasVentilation,
     required bool hasSeparateEntrance,
+    required double latitude,  // <-- НОВОЕ ПОЛЕ
+    required double longitude, // <-- НОВОЕ ПОЛЕ
   }) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
 
       final response = await _dio.post(
-        '/properties', // Предполагаемый эндпоинт для создания (POST /api/properties)
+        '/properties',
         data: {
           'title': title,
           'description': description,
@@ -87,10 +90,8 @@ class PropertyService {
           'hasWater': hasWater,
           'hasVentilation': hasVentilation,
           'hasSeparateEntrance': hasSeparateEntrance,
-          // Пока хардкодим координаты центра Москвы, чтобы не усложнять форму.
-          // Позже можем добавить выбор точки на карте!
-          'latitude': 55.7558,
-          'longitude': 37.6173,
+          'latitude': latitude,   // <-- ПЕРЕДАЕМ НА БЭКЕНД
+          'longitude': longitude, // <-- ПЕРЕДАЕМ НА БЭКЕНД
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -101,6 +102,7 @@ class PropertyService {
       return false;
     }
   }
+
   Future<List<Property>> getFavoriteProperties() async {
     try {
       final token = await _storage.read(key: 'jwt_token');

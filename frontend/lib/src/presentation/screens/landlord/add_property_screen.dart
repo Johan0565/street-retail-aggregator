@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../services/property_service.dart';
-
+import 'map_picker_screen.dart';
 class AddPropertyScreen extends StatefulWidget {
   const AddPropertyScreen({super.key});
 
@@ -22,6 +22,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   // Состояния для переключателей (тегов)
   bool _hasWater = false;
+  double? _selectedLat;
+  double? _selectedLon;
   bool _hasVentilation = false;
   bool _hasSeparateEntrance = false;
 
@@ -40,6 +42,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   Future<void> _submitForm() async {
     // Проверяем, что все обязательные поля заполнены
     if (!_formKey.currentState!.validate()) return;
+// Проверка, выбрал ли арендодатель координаты
+    if (_selectedLat == null || _selectedLon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пожалуйста, укажите точку на карте'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -52,6 +61,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       hasWater: _hasWater,
       hasVentilation: _hasVentilation,
       hasSeparateEntrance: _hasSeparateEntrance,
+      latitude: _selectedLat!,  // <-- ПЕРЕДАЕМ
+      longitude: _selectedLon!, // <-- ПЕРЕДАЕМ
     );
 
     setState(() => _isSubmitting = false);
@@ -114,25 +125,49 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 const SizedBox(height: 16),
 
                 // Цена и Электричество (в один ряд для красоты)
+                // Адрес и кнопка карты
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: _buildTextField(
-                        controller: _priceController,
-                        label: 'Цена (₽/мес)',
-                        hint: '150000',
-                        icon: Icons.currency_ruble,
-                        isNumber: true,
+                        controller: _addressController,
+                        label: 'Адрес',
+                        hint: 'г. Москва, ул. Ленина, д. 1',
+                        icon: Icons.location_on_outlined,
+                        readOnly: true,
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildTextField(
-                        controller: _powerController,
-                        label: 'Мощность (кВт)',
-                        hint: '15.0',
-                        icon: Icons.bolt,
-                        isNumber: true,
+                    const SizedBox(width: 12),
+                    Container(
+                      height: 60, // Высота под размер TextField
+                      width: 60,
+                      decoration: BoxDecoration(
+                        color: _primaryOrange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _primaryOrange.withOpacity(0.5)),
+                      ),
+                      child: IconButton(
+                        icon: Icon(Icons.map_outlined, color: _primaryOrange, size: 30),
+                        onPressed: () async {
+                          // Открываем экран выбора на карте
+                          final result = await Navigator.push<Map<String, dynamic>>(
+                            context,
+                            MaterialPageRoute(builder: (context) => const MapPickerScreen()),
+                          );
+
+                          // Если пользователь выбрал точку и вернулся
+                          if (result != null) {
+                            setState(() {
+                              _selectedLat = result['latitude'];
+                              _selectedLon = result['longitude'];
+                              // Если Яндекс отдал адрес, вписываем его автоматически
+                              if (result['address'] != 'Адрес не найден' && result['address'] != 'Ошибка получения адреса') {
+                                _addressController.text = result['address'];
+                              }
+                            });
+                          }
+                        },
                       ),
                     ),
                   ],
@@ -218,9 +253,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     required String hint,
     required IconData icon,
     bool isNumber = false,
+    bool readOnly = false,
   }) {
     return TextFormField(
       controller: controller,
+      readOnly: readOnly,
       keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
       validator: (value) => value!.isEmpty ? 'Заполните поле' : null,
       decoration: InputDecoration(
