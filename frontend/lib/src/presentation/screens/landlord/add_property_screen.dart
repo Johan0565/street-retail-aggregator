@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../services/property_service.dart';
 import 'map_picker_screen.dart';
+
 class AddPropertyScreen extends StatefulWidget {
   const AddPropertyScreen({super.key});
 
@@ -13,20 +14,18 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final PropertyService _propertyService = PropertyService();
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
-  // Контроллеры для текстовых полей
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _powerController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
 
-  // Состояния для переключателей (тегов)
   bool _hasWater = false;
-  double? _selectedLat;
-  double? _selectedLon;
   bool _hasVentilation = false;
   bool _hasSeparateEntrance = false;
 
+  double? _selectedLat;
+  double? _selectedLon;
   bool _isSubmitting = false;
 
   @override
@@ -40,44 +39,48 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   }
 
   Future<void> _submitForm() async {
-    // Проверяем, что все обязательные поля заполнены
     if (!_formKey.currentState!.validate()) return;
-// Проверка, выбрал ли арендодатель координаты
+
     if (_selectedLat == null || _selectedLon == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Пожалуйста, укажите точку на карте'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('Обязательно укажите точку на карте!'), backgroundColor: Colors.red),
       );
       return;
     }
 
     setState(() => _isSubmitting = true);
 
-    final success = await _propertyService.createProperty(
-      title: _titleController.text.trim(),
-      description: _descController.text.trim(),
-      address: _addressController.text.trim(),
-      pricePerMonth: int.parse(_priceController.text.trim()),
-      powerKw: double.parse(_powerController.text.trim()),
-      hasWater: _hasWater,
-      hasVentilation: _hasVentilation,
-      hasSeparateEntrance: _hasSeparateEntrance,
-      latitude: _selectedLat!,  // <-- ПЕРЕДАЕМ
-      longitude: _selectedLon!, // <-- ПЕРЕДАЕМ
-    );
-
-    setState(() => _isSubmitting = false);
-
-    if (success) {
-      if (!mounted) return;
-      Navigator.pop(context); // Закрываем экран
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Помещение успешно опубликовано!'), backgroundColor: Colors.green),
+    try {
+      final success = await _propertyService.createProperty(
+        title: _titleController.text.trim(),
+        description: _descController.text.trim(),
+        address: _addressController.text.trim(),
+        pricePerMonth: int.parse(_priceController.text.trim()),
+        powerKw: double.parse(_powerController.text.trim()),
+        hasWater: _hasWater,
+        hasVentilation: _hasVentilation,
+        hasSeparateEntrance: _hasSeparateEntrance,
+        latitude: _selectedLat!,
+        longitude: _selectedLon!,
       );
-    } else {
+
+      if (success) {
+        if (!mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Помещение опубликовано!'), backgroundColor: Colors.green),
+        );
+      } else {
+        throw Exception('Ошибка сервера');
+      }
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ошибка при публикации. Проверьте соединение.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Ошибка при публикации. Проверьте данные.'), backgroundColor: Colors.red),
       );
+    } finally {
+      // Это ГАРАНТИРУЕТ, что загрузка прекратится в любом случае
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
@@ -86,14 +89,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Новое помещение', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Новое помещение', style: TextStyle(color: Colors.black)),
         backgroundColor: Colors.white,
         elevation: 0,
-        foregroundColor: Colors.black,
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: SafeArea(
         child: Form(
@@ -103,68 +102,44 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Основная информация', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                _buildTextField(controller: _titleController, label: 'Заголовок', icon: Icons.title),
                 const SizedBox(height: 16),
 
-                // Название
-                _buildTextField(
-                  controller: _titleController,
-                  label: 'Заголовок объявления',
-                  hint: 'Например: Помещение свободного назначения 50 м²',
-                  icon: Icons.title,
-                ),
-                const SizedBox(height: 16),
-
-                // Адрес
-                _buildTextField(
-                  controller: _addressController,
-                  label: 'Адрес',
-                  hint: 'г. Москва, ул. Ленина, д. 1',
-                  icon: Icons.location_on_outlined,
-                ),
-                const SizedBox(height: 16),
-
-                // Цена и Электричество (в один ряд для красоты)
-                // Адрес и кнопка карты
+                // ОДНО ПОЛЕ АДРЕСА + КНОПКА КАРТЫ
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: _buildTextField(
                         controller: _addressController,
-                        label: 'Адрес',
-                        hint: 'г. Москва, ул. Ленина, д. 1',
+                        label: 'Введите адрес словами',
                         icon: Icons.location_on_outlined,
-                        readOnly: true,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Container(
-                      height: 60, // Высота под размер TextField
+                      height: 60,
                       width: 60,
                       decoration: BoxDecoration(
-                        color: _primaryOrange.withOpacity(0.1),
+                        color: _selectedLat != null ? Colors.green.withOpacity(0.1) : _primaryOrange.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _primaryOrange.withOpacity(0.5)),
+                        border: Border.all(color: _selectedLat != null ? Colors.green : _primaryOrange),
                       ),
                       child: IconButton(
-                        icon: Icon(Icons.map_outlined, color: _primaryOrange, size: 30),
+                        icon: Icon(
+                            _selectedLat != null ? Icons.check : Icons.map_outlined,
+                            color: _selectedLat != null ? Colors.green : _primaryOrange,
+                            size: 30
+                        ),
                         onPressed: () async {
-                          // Открываем экран выбора на карте
                           final result = await Navigator.push<Map<String, dynamic>>(
                             context,
                             MaterialPageRoute(builder: (context) => const MapPickerScreen()),
                           );
-
-                          // Если пользователь выбрал точку и вернулся
                           if (result != null) {
                             setState(() {
                               _selectedLat = result['latitude'];
                               _selectedLon = result['longitude'];
-                              // Если Яндекс отдал адрес, вписываем его автоматически
-                              if (result['address'] != 'Адрес не найден' && result['address'] != 'Ошибка получения адреса') {
-                                _addressController.text = result['address'];
-                              }
                             });
                           }
                         },
@@ -172,72 +147,55 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                     ),
                   ],
                 ),
-
-                const Divider(height: 48),
-
-                const Text('Технические параметры (Теги)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                const Text('Отметьте, что есть в помещении. Это поможет алгоритму найти идеального арендатора.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                if (_selectedLat == null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8, left: 12),
+                    child: Text('Нажмите на карту, чтобы передать точные координаты ->', style: TextStyle(color: Colors.red, fontSize: 12)),
+                  ),
                 const SizedBox(height: 16),
 
-                // Переключатели
-                _buildSwitch(
-                  title: 'Мокрая точка (Вода)',
-                  value: _hasWater,
-                  icon: Icons.water_drop_outlined,
-                  onChanged: (val) => setState(() => _hasWater = val),
-                ),
-                _buildSwitch(
-                  title: 'Промышленная вытяжка',
-                  value: _hasVentilation,
-                  icon: Icons.air,
-                  onChanged: (val) => setState(() => _hasVentilation = val),
-                ),
-                _buildSwitch(
-                  title: 'Отдельный вход',
-                  value: _hasSeparateEntrance,
-                  icon: Icons.door_front_door_outlined,
-                  onChanged: (val) => setState(() => _hasSeparateEntrance = val),
+                Row(
+                  children: [
+                    Expanded(child: _buildTextField(controller: _priceController, label: 'Цена (₽/мес)', icon: Icons.currency_ruble, isNumber: true)),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildTextField(controller: _powerController, label: 'кВт', icon: Icons.bolt, isNumber: true)),
+                  ],
                 ),
 
                 const Divider(height: 48),
-
-                const Text('Детальное описание', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('Параметры', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
 
-                // Описание
+                _buildSwitch(title: 'Мокрая точка', value: _hasWater, icon: Icons.water_drop, onChanged: (v) => setState(() => _hasWater = v)),
+                _buildSwitch(title: 'Вытяжка', value: _hasVentilation, icon: Icons.air, onChanged: (v) => setState(() => _hasVentilation = v)),
+                _buildSwitch(title: 'Отдельный вход', value: _hasSeparateEntrance, icon: Icons.door_front_door, onChanged: (v) => setState(() => _hasSeparateEntrance = v)),
+
+                const Divider(height: 48),
                 TextFormField(
                   controller: _descController,
-                  maxLines: 5,
-                  validator: (value) => value!.isEmpty ? 'Заполните это поле' : null,
+                  maxLines: 4,
+                  validator: (value) => value!.isEmpty ? 'Заполните описание' : null,
                   decoration: InputDecoration(
-                    hintText: 'Опишите преимущества, трафик, соседство...',
+                    labelText: 'Описание',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: _primaryOrange, width: 2),
-                    ),
                   ),
                 ),
-
                 const SizedBox(height: 40),
 
-                // Кнопка публикации
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _isSubmitting ? null : _submitForm,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black, // Черная кнопка, как в деталях помещения
+                      backgroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                     child: _isSubmitting
                         ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Опубликовать помещение', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+                        : const Text('Опубликовать', style: TextStyle(fontSize: 18, color: Colors.white)),
                   ),
                 ),
-                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -246,55 +204,26 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // Вспомогательный виджет для текстовых полей
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    bool isNumber = false,
-    bool readOnly = false,
-  }) {
+  Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, bool isNumber = false}) {
     return TextFormField(
       controller: controller,
-      readOnly: readOnly,
       keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-      validator: (value) => value!.isEmpty ? 'Заполните поле' : null,
+      validator: (value) => value!.isEmpty ? 'Обязательное поле' : null,
       decoration: InputDecoration(
         labelText: label,
-        hintText: hint,
         prefixIcon: Icon(icon, color: Colors.grey),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: _primaryOrange, width: 2),
-        ),
       ),
     );
   }
 
-  // Вспомогательный виджет для красивых переключателей
-  Widget _buildSwitch({
-    required String title,
-    required bool value,
-    required IconData icon,
-    required Function(bool) onChanged,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      child: SwitchListTile(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        secondary: Icon(icon, color: _primaryOrange),
-        activeColor: _primaryOrange,
-        value: value,
-        onChanged: onChanged,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
+  Widget _buildSwitch({required String title, required bool value, required IconData icon, required Function(bool) onChanged}) {
+    return SwitchListTile(
+      title: Text(title),
+      secondary: Icon(icon, color: _primaryOrange),
+      activeColor: _primaryOrange,
+      value: value,
+      onChanged: onChanged,
     );
   }
 }
