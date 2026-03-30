@@ -37,6 +37,7 @@ public class ApplicationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(application);
     }
 
+
     @GetMapping("/my-requests")
     @PreAuthorize("hasRole('TENANT')")
     public ResponseEntity<List<ApplicationResponseDto>> getTenantApplications(Principal principal) {
@@ -64,7 +65,12 @@ public class ApplicationController {
                 applicationId,
                 request.getStatus()
         );
-        return ResponseEntity.ok(updatedApplication);
+        return ResponseEntity.ok(applicationService.updateApplicationStatus(
+                landlordId,
+                applicationId,
+                request.getStatus(),
+                request.getRejectionReason()
+        ));
     }
 
     private Long extractUserIdFromPrincipal(Principal principal) {

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-
 import '../../../domain/application_model.dart';
 import '../../../services/application_service.dart';
-
 
 class MyApplicationsScreen extends StatefulWidget {
   const MyApplicationsScreen({super.key});
@@ -14,13 +12,23 @@ class MyApplicationsScreen extends StatefulWidget {
 class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
   final ApplicationService _applicationService = ApplicationService();
   late Future<List<ApplicationModel>> _applicationsFuture;
-
   final Color _primaryOrange = const Color(0xFFFF8C00);
+
+  // --- ПЕРЕМЕННЫЕ ДЛЯ ФИЛЬТРОВ ---
+  String _sortOrder = 'desc'; // 'desc' - сначала новые, 'asc' - сначала старые
+  String _statusFilter = 'ALL'; // 'ALL', 'PENDING', 'ACCEPTED', 'REJECTED'
+  bool _onlyWithLetter = false; // Только с сопроводительным письмом
 
   @override
   void initState() {
     super.initState();
-    _applicationsFuture = _applicationService.getMyApplications();
+    _loadApplications();
+  }
+
+  void _loadApplications() {
+    setState(() {
+      _applicationsFuture = _applicationService.getMyApplications();
+    });
   }
 
   // Метод для перевода статуса на русский и выбора цвета
@@ -39,6 +47,136 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
     }
   }
 
+  // --- ЛОГИКА ФИЛЬТРАЦИИ И СОРТИРОВКИ ---
+  List<ApplicationModel> _applyFilters(List<ApplicationModel> apps) {
+    var filtered = apps.toList();
+
+    // 1. Фильтр по статусу
+    if (_statusFilter != 'ALL') {
+      filtered = filtered.where((a) => a.status == _statusFilter).toList();
+    }
+
+    // 2. Фильтр по наличию письма
+    if (_onlyWithLetter) {
+      filtered = filtered.where((a) => a.coverLetter.trim().isNotEmpty).toList();
+    }
+
+    // 3. Сортировка по дате
+    filtered.sort((a, b) {
+      final dateA = DateTime.tryParse(a.createdAt) ?? DateTime.now();
+      final dateB = DateTime.tryParse(b.createdAt) ?? DateTime.now();
+      return _sortOrder == 'desc' ? dateB.compareTo(dateA) : dateA.compareTo(dateB);
+    });
+
+    return filtered;
+  }
+
+  // --- ШТОРКА С НАСТРОЙКАМИ ФИЛЬТРОВ ---
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Фильтры и сортировка', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 24),
+
+                  // Сортировка по дате
+                  const Text('По дате', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('Сначала новые'),
+                          selected: _sortOrder == 'desc',
+                          selectedColor: _primaryOrange.withOpacity(0.2),
+                          onSelected: (val) => setModalState(() => _sortOrder = 'desc'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Text('Сначала старые'),
+                          selected: _sortOrder == 'asc',
+                          selectedColor: _primaryOrange.withOpacity(0.2),
+                          onSelected: (val) => setModalState(() => _sortOrder = 'asc'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Статус заявки
+                  const Text('Статус', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildStatusChip('Все', 'ALL', setModalState),
+                      _buildStatusChip('На рассмотрении', 'PENDING', setModalState),
+                      _buildStatusChip('Одобрено', 'ACCEPTED', setModalState),
+                      _buildStatusChip('Отклонено', 'REJECTED', setModalState),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Только с письмом
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Только с сопроводительным письмом', style: TextStyle(fontWeight: FontWeight.bold)),
+                    activeColor: _primaryOrange,
+                    value: _onlyWithLetter,
+                    onChanged: (val) => setModalState(() => _onlyWithLetter = val),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Кнопка применения
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        setState(() {}); // Перерисовываем экран
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Применить', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusChip(String label, String value, StateSetter setModalState) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: _statusFilter == value,
+      selectedColor: _primaryOrange.withOpacity(0.2),
+      onSelected: (selected) {
+        if (selected) setModalState(() => _statusFilter = value);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -48,6 +186,17 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        actions: [
+          // КНОПКА ФИЛЬТРА В APPBAR
+          IconButton(
+            icon: Icon(
+              (_sortOrder != 'desc' || _statusFilter != 'ALL' || _onlyWithLetter) ? Icons.filter_alt : Icons.filter_alt_outlined,
+              color: (_sortOrder != 'desc' || _statusFilter != 'ALL' || _onlyWithLetter) ? _primaryOrange : Colors.black,
+            ),
+            onPressed: _showFilterSheet,
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: FutureBuilder<List<ApplicationModel>>(
         future: _applicationsFuture,
@@ -69,7 +218,21 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
             );
           }
 
-          final applications = snapshot.data!;
+          // ПРИМЕНЯЕМ ФИЛЬТРЫ
+          final applications = _applyFilters(snapshot.data!);
+
+          if (applications.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.search_off, size: 80, color: Colors.grey[300]),
+                  const SizedBox(height: 16),
+                  const Text('По вашим фильтрам ничего не найдено', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                ],
+              ),
+            );
+          }
 
           return RefreshIndicator(
             color: _primaryOrange,
@@ -79,7 +242,7 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
               });
             },
             child: ListView.separated(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100), // Отступ снизу для нижней панели
+              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
               itemCount: applications.length,
               separatorBuilder: (context, index) => const SizedBox(height: 16),
               itemBuilder: (context, index) {
@@ -119,7 +282,7 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                             ),
                           ),
                           Text(
-                            app.createdAt.split('T')[0], // Показываем только дату
+                            app.createdAt.split('T')[0] + ' ' + app.createdAt.split('T')[1].substring(0, 5),
                             style: const TextStyle(color: Colors.grey, fontSize: 12),
                           ),
                         ],
@@ -152,11 +315,39 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                       const Text('Ваше письмо:', style: TextStyle(fontSize: 12, color: Colors.grey)),
                       const SizedBox(height: 4),
                       Text(
-                        app.coverLetter,
+                        app.coverLetter.isNotEmpty ? app.coverLetter : 'Без письма',
                         style: const TextStyle(fontSize: 14, color: Colors.black87),
-                        maxLines: 2, // Обрезаем длинный текст
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
+
+                      // Причина отказа (выводится только если REJECTED)
+                      if (app.status == 'REJECTED' && app.rejectionReason != null && app.rejectionReason!.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.red.withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(Icons.info_outline, color: Colors.red, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Причина отказа:', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(app.rejectionReason!, style: const TextStyle(color: Colors.black87, fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );

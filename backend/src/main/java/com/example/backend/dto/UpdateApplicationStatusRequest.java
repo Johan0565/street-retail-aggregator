@@ -6,4 +6,5 @@ import lombok.Data;
 @Data
 public class UpdateApplicationStatusRequest {
     private ApplicationStatus status;
+    private String rejectionReason; // <-- ДОБАВИЛИ
 }

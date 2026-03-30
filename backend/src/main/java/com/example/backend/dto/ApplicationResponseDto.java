@@ -13,6 +13,7 @@ public class ApplicationResponseDto {
     private ApplicationStatus status;
     private String coverLetter;
     private LocalDateTime createdAt;
+    private String rejectionReason; // <-- ДОБАВИЛИ
 
     // Вложенные объекты с самым необходимым минимумом информации
     private PropertyShortInfo property;

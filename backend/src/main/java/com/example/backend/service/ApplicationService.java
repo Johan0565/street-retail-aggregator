@@ -110,7 +110,32 @@ public class ApplicationService {
 
         return mapToDto(application);
     }
+    @Transactional
+    public ApplicationResponseDto updateApplicationStatus(Long landlordId, Long applicationId, ApplicationStatus newStatus, String rejectionReason) { // <-- Добавили String rejectionReason
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
+        // Важная проверка безопасности: принадлежит ли помещение этому арендодателю?
+        if (!application.getProperty().getLandlord().getId().equals(landlordId)) {
+            throw new RuntimeException("У вас нет прав на изменение этой заявки");
+        }
+
+        application.setStatus(newStatus);
+
+        // --- СОХРАНЯЕМ ПРИЧИНУ ОТКАЗА ---
+        if (newStatus == ApplicationStatus.REJECTED && rejectionReason != null) {
+            application.setRejectionReason(rejectionReason);
+        }
+
+        // Если заявка принята, можно сразу поменять статус помещения на RENTED
+        if (newStatus == ApplicationStatus.ACCEPTED) {
+            Property property = application.getProperty();
+            property.setStatus(PropertyStatus.RENTED);
+            propertyRepository.save(property);
+        }
+
+        return mapToDto(applicationRepository.save(application));
+    }
     // Вспомогательный метод маппинга Entity -> DTO
     private ApplicationResponseDto mapToDto(Application app) {
         String tenantName = "Не указано";
@@ -126,6 +151,7 @@ public class ApplicationService {
                 .status(app.getStatus())
                 .coverLetter(app.getCoverLetter())
                 .createdAt(app.getCreatedAt())
+                .rejectionReason(app.getRejectionReason())
                 .property(ApplicationResponseDto.PropertyShortInfo.builder()
                         .id(app.getProperty().getId())
                         .title(app.getProperty().getTitle())

@@ -29,6 +29,10 @@ public class Application {
     @Column(name = "cover_letter", columnDefinition = "TEXT")
     private String coverLetter;
 
+    // --- НОВОЕ ПОЛЕ ---
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

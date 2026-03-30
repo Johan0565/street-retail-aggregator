@@ -65,4 +65,48 @@ class ApplicationService {
       return [];
     }
   }
+  // Получить входящие заявки (для Арендодателя)
+  Future<List<ApplicationModel>> getIncomingApplications() async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.get(
+        '/applications/incoming',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data;
+        return data.map((json) => ApplicationModel.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('Ошибка при загрузке входящих заявок: $e');
+      return [];
+    }
+  }
+
+  // Обновить статус заявки
+  // Обновить статус заявки
+  // Обновить статус заявки (добавили именованный параметр rejectionReason)
+  Future<bool> updateApplicationStatus(int applicationId, String newStatus, {String? rejectionReason}) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+
+      final response = await _dio.patch(
+        '/applications/$applicationId/status',
+        data: {
+          'status': newStatus,
+          // Отправляем причину отказа, если она есть
+          if (rejectionReason != null && rejectionReason.isNotEmpty) 'rejectionReason': rejectionReason,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Ошибка обновления статуса: $e');
+      return false;
+    }
+  }
+
 }
