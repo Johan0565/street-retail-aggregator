@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../screens/property.dart'; // Добавляем импорт модели
+
+import '../domain/property.dart';
+
 
 class FavoriteService {
   static String get _baseUrl {

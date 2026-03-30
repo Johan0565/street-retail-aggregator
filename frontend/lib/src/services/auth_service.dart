@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../screens/user_profile.dart';
+import '../domain/user_profile.dart';
+
 
 class AuthService {
 // 1. Оставляем в baseUrl ТОЛЬКО хост и порт (без /api)

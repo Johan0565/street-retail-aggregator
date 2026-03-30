@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/service/auth_service.dart';
-import 'screens/login_screen.dart';
-import 'screens/tenant_main_screen.dart';
-import 'service/auth_service.dart';
-import 'package:yandex_mapkit/yandex_mapkit.dart';
+import 'package:frontend/src/presentation/screens/auth/login_screen.dart';
+import 'package:frontend/src/presentation/screens/landlord/LandlordMainScreen.dart';
+import 'package:frontend/src/presentation/screens/tenant/tenant_main_screen.dart';
+import 'package:frontend/src/services/auth_service.dart';
+
 
 void main() {
   runApp(const MyApp());
@@ -60,7 +60,7 @@ class _SplashScreenState extends State<SplashScreen> {
       // Пока экрана арендодателя нет, кидаем на заглушку
       Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const Scaffold(body: Center(child: Text('Экран арендодателя скоро будет'))))
+          MaterialPageRoute(builder: (_) => const LandlordMainScreen())
       );
     } else {
       // Токена нет или галочка не стояла -> на экран авторизации

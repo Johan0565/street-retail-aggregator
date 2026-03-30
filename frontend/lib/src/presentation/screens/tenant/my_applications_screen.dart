@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../service/application_service.dart';
-import 'application_model.dart';
+
+import '../../../domain/application_model.dart';
+import '../../../services/application_service.dart';
 
 
 class MyApplicationsScreen extends StatefulWidget {

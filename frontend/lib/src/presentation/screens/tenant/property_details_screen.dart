@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/screens/property.dart';
-import '../service/application_service.dart';
-import '../service/favorite_service.dart';
+
+import '../../../domain/property.dart';
+import '../../../services/application_service.dart';
+import '../../../services/favorite_service.dart';
+
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;

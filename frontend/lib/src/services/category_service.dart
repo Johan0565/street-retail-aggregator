@@ -2,7 +2,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../screens/business_category.dart';
+import '../domain/business_category.dart';
+
 
 class CategoryService {
   static String get _baseUrl {

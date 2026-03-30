@@ -2,7 +2,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../screens/application_model.dart';
+import '../domain/application_model.dart';
+
 
 class ApplicationService {
   static String get _baseUrl {

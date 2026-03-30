@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frontend/screens/tenant_main_screen.dart';
 import 'package:pinput/pinput.dart';
-import '../service/auth_service.dart';
-import '../main.dart';
-import 'LandlordMainScreen.dart'; // Для перехода на MapScreen
+import '../../../services/auth_service.dart';
+import '../landlord/LandlordMainScreen.dart';
+import '../tenant/tenant_main_screen.dart'; // Для перехода на MapScreen
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});

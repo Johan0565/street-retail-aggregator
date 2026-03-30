@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/screens/property.dart';
-import '../service/favorite_service.dart';
+import '../../../domain/property.dart';
+import '../../../services/favorite_service.dart';
 import 'property_details_screen.dart'; // Чтобы открывать детали помещения
 
 class FavoritesScreen extends StatefulWidget {

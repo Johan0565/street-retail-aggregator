@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'user_profile.dart';
-import '../service/auth_service.dart';
-import 'login_screen.dart';
-import 'business_category.dart';
-import '../service/category_service.dart';
+import '../../../domain/user_profile.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/category_service.dart';
+import '../auth/login_screen.dart';
+import '../../../domain/business_category.dart';
+
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 

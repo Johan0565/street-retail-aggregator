@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:frontend/screens/tenant_main_screen.dart';
-import '../service/auth_service.dart';
-import '../main.dart'; // Если MapScreen лежит в main.dart
-import 'LandlordMainScreen.dart';
+import '../../../services/auth_service.dart';
+import '../landlord/LandlordMainScreen.dart';
+import '../tenant/tenant_main_screen.dart';
 import 'register_screen.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
