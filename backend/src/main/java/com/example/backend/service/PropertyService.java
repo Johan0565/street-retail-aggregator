@@ -93,10 +93,7 @@ public class PropertyService {
 
         return propertyRepository.save(property);
     }
-    @Transactional(readOnly = true)
-    public List<Property> getMyProperties(Long landlordId) {
-        return propertyRepository.findByLandlordId(landlordId);
-    }
+
 
     /**
      * Обновить объявление
@@ -141,6 +138,14 @@ public class PropertyService {
     /**
      * Получить все опубликованные помещения (общая лента)
      */
+    @Transactional(readOnly = true)
+    public List<Property> getMyProperties(Long landlordId) {
+        return propertyRepository.findByLandlordId(landlordId).stream()
+                // ОТФИЛЬТРОВЫВАЕМ АРХИВНЫЕ (УДАЛЕННЫЕ) ПОМЕЩЕНИЯ
+                .filter(property -> property.getStatus() != PropertyStatus.ARCHIVED)
+                .collect(Collectors.toList());
+    }
+
     @Transactional(readOnly = true)
     public List<Property> getAllPublishedProperties() {
         return propertyRepository.findByStatus(PropertyStatus.PUBLISHED);
