@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/property.dart';
 import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
-import 'package:flutter/material.dart';
-import '../../../domain/property.dart';
-// ... твои остальные импорты ...
+
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
@@ -22,7 +20,6 @@ class PropertyDetailsScreen extends StatefulWidget {
 }
 
 class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
-// ... дальше идет твой обычный код экрана ...
   final Color primaryOrange = const Color(0xFFFF8C00);
 
   bool _isFavorite = false;
@@ -233,6 +230,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
+
           child: const Text('Оставить заявку', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
         ),
       ),

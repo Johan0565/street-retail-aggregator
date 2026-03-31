@@ -10,16 +10,31 @@ class AddPropertyScreen extends StatefulWidget {
 }
 
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
-  final _formKey = GlobalKey<FormState>();
+  int _currentStep = 0; // Текущий шаг Wizard'а
+  final _formKeys = [GlobalKey<FormState>(), GlobalKey<FormState>(), GlobalKey<FormState>(), GlobalKey<FormState>()];
+
   final PropertyService _propertyService = PropertyService();
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _priceController = TextEditingController();
-  final TextEditingController _powerController = TextEditingController();
-  final TextEditingController _descController = TextEditingController();
+  // Контроллеры полей
+  final _titleController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _areaController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _depositController = TextEditingController();
+  final _powerController = TextEditingController();
+  final _descController = TextEditingController();
+  final _contactNameController = TextEditingController();
+  final _contactPhoneController = TextEditingController();
 
+  // Состояния (Выпадающие списки и переключатели)
+  String? _selectedPropertyType;
+  String? _selectedDealType;
+  String? _selectedRepairState;
+  String? _selectedLayout;
+
+  bool _taxIncluded = false;
+  bool _utilityIncluded = false;
   bool _hasWater = false;
   bool _hasVentilation = false;
   bool _hasSeparateEntrance = false;
@@ -30,21 +45,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _addressController.dispose();
-    _priceController.dispose();
-    _powerController.dispose();
-    _descController.dispose();
+    _titleController.dispose(); _addressController.dispose(); _areaController.dispose();
+    _priceController.dispose(); _depositController.dispose(); _powerController.dispose();
+    _descController.dispose(); _contactNameController.dispose(); _contactPhoneController.dispose();
     super.dispose();
   }
 
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) return;
-
     if (_selectedLat == null || _selectedLon == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Обязательно укажите точку на карте!'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите точку на карте! (Шаг 1)'), backgroundColor: Colors.red));
+      setState(() => _currentStep = 0);
       return;
     }
 
@@ -55,31 +65,34 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         title: _titleController.text.trim(),
         description: _descController.text.trim(),
         address: _addressController.text.trim(),
-        pricePerMonth: int.parse(_priceController.text.trim()),
-        powerKw: double.parse(_powerController.text.trim()),
+        latitude: _selectedLat!,
+        longitude: _selectedLon!,
+        areaSqm: double.parse(_areaController.text.trim()),
+        pricePerMonth: double.parse(_priceController.text.trim()),
+        propertyType: _selectedPropertyType!,
+        dealType: _selectedDealType!,
+        taxIncluded: _taxIncluded,
+        utilityIncluded: _utilityIncluded,
+        depositMonths: int.tryParse(_depositController.text.trim()) ?? 1,
+        powerKw: int.tryParse(_powerController.text.trim()) ?? 0,
         hasWater: _hasWater,
         hasVentilation: _hasVentilation,
         hasSeparateEntrance: _hasSeparateEntrance,
-        latitude: _selectedLat!,
-        longitude: _selectedLon!,
+        repairState: _selectedRepairState,
+        layout: _selectedLayout,
+        contactName: _contactNameController.text.trim(),
+        contactPhone: _contactPhoneController.text.trim(),
       );
 
-      if (success) {
-        if (!mounted) return;
+      if (success && mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Помещение опубликовано!'), backgroundColor: Colors.green),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Помещение опубликовано!'), backgroundColor: Colors.green));
       } else {
         throw Exception('Ошибка сервера');
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ошибка при публикации. Проверьте данные.'), backgroundColor: Colors.red),
-      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ошибка публикации. Проверьте данные.'), backgroundColor: Colors.red));
     } finally {
-      // Это ГАРАНТИРУЕТ, что загрузка прекратится в любом случае
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
@@ -89,121 +102,187 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Новое помещение', style: TextStyle(color: Colors.black)),
+        title: const Text('Добавить помещение', style: TextStyle(color: Colors.black)),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildTextField(controller: _titleController, label: 'Заголовок', icon: Icons.title),
-                const SizedBox(height: 16),
-
-                // ОДНО ПОЛЕ АДРЕСА + КНОПКА КАРТЫ
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: Theme(
+          data: ThemeData(
+            colorScheme: ColorScheme.light(primary: _primaryOrange), // Цвет активных шагов Stepper
+          ),
+          child: Stepper(
+            type: StepperType.vertical,
+            currentStep: _currentStep,
+            onStepTapped: (step) => setState(() => _currentStep = step),
+            onStepContinue: () {
+              // Валидация текущего шага перед переходом
+              if (_formKeys[_currentStep].currentState!.validate()) {
+                if (_currentStep < 3) {
+                  setState(() => _currentStep += 1);
+                } else {
+                  _submitForm(); // Конец, отправляем
+                }
+              }
+            },
+            onStepCancel: () {
+              if (_currentStep > 0) setState(() => _currentStep -= 1);
+            },
+            controlsBuilder: (context, details) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 24.0),
+                child: Row(
                   children: [
                     Expanded(
-                      child: _buildTextField(
-                        controller: _addressController,
-                        label: 'Введите адрес словами',
-                        icon: Icons.location_on_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      height: 60,
-                      width: 60,
-                      decoration: BoxDecoration(
-                        color: _selectedLat != null ? Colors.green.withOpacity(0.1) : _primaryOrange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _selectedLat != null ? Colors.green : _primaryOrange),
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                            _selectedLat != null ? Icons.check : Icons.map_outlined,
-                            color: _selectedLat != null ? Colors.green : _primaryOrange,
-                            size: 30
+                      child: ElevatedButton(
+                        onPressed: _isSubmitting ? null : details.onStepContinue,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: () async {
-                          final result = await Navigator.push<Map<String, dynamic>>(
-                            context,
-                            MaterialPageRoute(builder: (context) => const MapPickerScreen()),
-                          );
-                          if (result != null) {
-                            setState(() {
-                              _selectedLat = result['latitude'];
-                              _selectedLon = result['longitude'];
-                            });
-                          }
-                        },
+                        child: _isSubmitting && _currentStep == 3
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : Text(_currentStep == 3 ? 'Опубликовать' : 'Далее', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       ),
                     ),
+                    if (_currentStep > 0) ...[
+                      const SizedBox(width: 12),
+                      TextButton(
+                        onPressed: _isSubmitting ? null : details.onStepCancel,
+                        child: const Text('Назад', style: TextStyle(color: Colors.grey)),
+                      ),
+                    ]
                   ],
                 ),
-                if (_selectedLat == null)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8, left: 12),
-                    child: Text('Нажмите на карту, чтобы передать точные координаты ->', style: TextStyle(color: Colors.red, fontSize: 12)),
+              );
+            },
+            steps: [
+              // ШАГ 1: БАЗОВАЯ ИНФО
+              Step(
+                title: const Text('Базовая информация', style: TextStyle(fontWeight: FontWeight.bold)),
+                isActive: _currentStep >= 0,
+                state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+                content: Form(
+                  key: _formKeys[0],
+                  child: Column(
+                    children: [
+                      _buildTextField(controller: _titleController, label: 'Название объявления', icon: Icons.title),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(child: _buildDropdown(label: 'Тип', value: _selectedPropertyType, items: {'Офис':'OFFICE', 'Стрит-ритейл':'RETAIL', 'Склад':'WAREHOUSE', 'ПСН':'PSN', 'Общепит':'CATERING'}, onChanged: (v) => setState(() => _selectedPropertyType = v))),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildDropdown(label: 'Сделка', value: _selectedDealType, items: {'Прямая':'DIRECT_LEASE', 'Субаренда':'SUBLEASE'}, onChanged: (v) => setState(() => _selectedDealType = v))),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(controller: _areaController, label: 'Общая площадь (м²)', icon: Icons.square_foot, isNumber: true),
+                      const SizedBox(height: 16),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildTextField(controller: _addressController, label: 'Адрес', icon: Icons.location_on_outlined)),
+                          const SizedBox(width: 12),
+                          Container(
+                            height: 60, width: 60,
+                            decoration: BoxDecoration(
+                              color: _selectedLat != null ? Colors.green.withOpacity(0.1) : _primaryOrange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: _selectedLat != null ? Colors.green : _primaryOrange),
+                            ),
+                            child: IconButton(
+                              icon: Icon(_selectedLat != null ? Icons.check : Icons.map_outlined, color: _selectedLat != null ? Colors.green : _primaryOrange, size: 30),
+                              onPressed: () async {
+                                final result = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(builder: (context) => const MapPickerScreen()));
+                                if (result != null) setState(() { _selectedLat = result['latitude']; _selectedLon = result['longitude']; });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    Expanded(child: _buildTextField(controller: _priceController, label: 'Цена (₽/мес)', icon: Icons.currency_ruble, isNumber: true)),
-                    const SizedBox(width: 16),
-                    Expanded(child: _buildTextField(controller: _powerController, label: 'кВт', icon: Icons.bolt, isNumber: true)),
-                  ],
                 ),
+              ),
 
-                const Divider(height: 48),
-                const Text('Параметры', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-
-                _buildSwitch(title: 'Мокрая точка', value: _hasWater, icon: Icons.water_drop, onChanged: (v) => setState(() => _hasWater = v)),
-                _buildSwitch(title: 'Вытяжка', value: _hasVentilation, icon: Icons.air, onChanged: (v) => setState(() => _hasVentilation = v)),
-                _buildSwitch(title: 'Отдельный вход', value: _hasSeparateEntrance, icon: Icons.door_front_door, onChanged: (v) => setState(() => _hasSeparateEntrance = v)),
-
-                const Divider(height: 48),
-                TextFormField(
-                  controller: _descController,
-                  maxLines: 4,
-                  validator: (value) => value!.isEmpty ? 'Заполните описание' : null,
-                  decoration: InputDecoration(
-                    labelText: 'Описание',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              // ШАГ 2: ФИНАНСЫ
+              Step(
+                title: const Text('Финансовые условия', style: TextStyle(fontWeight: FontWeight.bold)),
+                isActive: _currentStep >= 1,
+                state: _currentStep > 1 ? StepState.complete : StepState.indexed,
+                content: Form(
+                  key: _formKeys[1],
+                  child: Column(
+                    children: [
+                      _buildTextField(controller: _priceController, label: 'Арендная ставка (₽/мес)', icon: Icons.currency_ruble, isNumber: true),
+                      const SizedBox(height: 16),
+                      _buildTextField(controller: _depositController, label: 'Депозит (Кол-во месяцев)', icon: Icons.security, isNumber: true),
+                      const SizedBox(height: 8),
+                      _buildSwitch(title: 'Включает НДС', value: _taxIncluded, icon: Icons.receipt_long, onChanged: (v) => setState(() => _taxIncluded = v)),
+                      _buildSwitch(title: 'Коммуналка включена', value: _utilityIncluded, icon: Icons.water_drop_outlined, onChanged: (v) => setState(() => _utilityIncluded = v)),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 40),
+              ),
 
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _submitForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    child: _isSubmitting
-                        ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Опубликовать', style: TextStyle(fontSize: 18, color: Colors.white)),
+              // ШАГ 3: ТЕХНИЧЕСКИЕ
+              Step(
+                title: const Text('Технические параметры', style: TextStyle(fontWeight: FontWeight.bold)),
+                isActive: _currentStep >= 2,
+                state: _currentStep > 2 ? StepState.complete : StepState.indexed,
+                content: Form(
+                  key: _formKeys[2],
+                  child: Column(
+                    children: [
+                      _buildTextField(controller: _powerController, label: 'Мощность (кВт)', icon: Icons.bolt, isNumber: true),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(child: _buildDropdown(label: 'Ремонт', value: _selectedRepairState, items: {'Под чистовую':'PRE_FINISHING', 'Типовой':'TYPICAL', 'Дизайнерский':'DESIGNER', 'Требует ремонта':'SHELL_AND_CORE'}, onChanged: (v) => setState(() => _selectedRepairState = v))),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildDropdown(label: 'Планировка', value: _selectedLayout, items: {'Open Space':'OPEN_SPACE', 'Кабинетная':'CABINET', 'Смешанная':'MIXED'}, onChanged: (v) => setState(() => _selectedLayout = v))),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      _buildSwitch(title: 'Мокрая точка', value: _hasWater, icon: Icons.water_drop, onChanged: (v) => setState(() => _hasWater = v)),
+                      _buildSwitch(title: 'Вытяжка', value: _hasVentilation, icon: Icons.air, onChanged: (v) => setState(() => _hasVentilation = v)),
+                      _buildSwitch(title: 'Отдельный вход', value: _hasSeparateEntrance, icon: Icons.door_front_door, onChanged: (v) => setState(() => _hasSeparateEntrance = v)),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+
+              // ШАГ 4: КОНТАКТЫ
+              Step(
+                title: const Text('Детали и Контакты', style: TextStyle(fontWeight: FontWeight.bold)),
+                isActive: _currentStep >= 3,
+                content: Form(
+                  key: _formKeys[3],
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _descController, maxLines: 4,
+                        validator: (value) => value!.isEmpty ? 'Обязательное поле' : null,
+                        decoration: InputDecoration(labelText: 'Текстовое описание объекта', border: OutlineInputBorder(borderRadius: BorderRadius.circular(16))),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(controller: _contactNameController, label: 'Контактное лицо / Компания', icon: Icons.person_outline),
+                      const SizedBox(height: 16),
+                      _buildTextField(controller: _contactPhoneController, label: 'Телефон для связи', icon: Icons.phone_outlined, isNumber: true),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  // Вспомогательный виджет поля ввода
   Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, bool isNumber = false}) {
     return TextFormField(
       controller: controller,
@@ -213,17 +292,31 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         labelText: label,
         prefixIcon: Icon(icon, color: Colors.grey),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16),
       ),
     );
   }
 
+  // Вспомогательный виджет Dropdown (для Enum'ов)
+  Widget _buildDropdown({required String label, required String? value, required Map<String, String> items, required Function(String?) onChanged}) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      validator: (val) => val == null ? 'Укажите' : null,
+      decoration: InputDecoration(labelText: label, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16)),
+      items: items.entries.map((e) => DropdownMenuItem(value: e.value, child: Text(e.key, style: const TextStyle(fontSize: 14)))).toList(),
+      onChanged: onChanged,
+    );
+  }
+
+  // Вспомогательный виджет переключателя
   Widget _buildSwitch({required String title, required bool value, required IconData icon, required Function(bool) onChanged}) {
     return SwitchListTile(
-      title: Text(title),
+      title: Text(title, style: const TextStyle(fontSize: 14)),
       secondary: Icon(icon, color: _primaryOrange),
       activeColor: _primaryOrange,
       value: value,
       onChanged: onChanged,
+      contentPadding: EdgeInsets.zero,
     );
   }
 }

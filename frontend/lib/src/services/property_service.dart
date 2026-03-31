@@ -64,17 +64,32 @@ class PropertyService {
   }
   // Создание нового объекта недвижимости
   // Создание нового объекта недвижимости
+  // Создание нового объекта недвижимости
   Future<bool> createProperty({
     required String title,
     required String description,
     required String address,
-    required int pricePerMonth,
-    required double powerKw,
+    required double latitude,
+    required double longitude,
+    required double areaSqm,
+    required double pricePerMonth,
+    // Новые базовые
+    required String propertyType,
+    required String dealType,
+    // Новые финансовые
+    bool taxIncluded = false,
+    bool utilityIncluded = false,
+    int? depositMonths,
+    // Новые технические
+    required int powerKw,
     required bool hasWater,
     required bool hasVentilation,
     required bool hasSeparateEntrance,
-    required double latitude,  // <-- НОВОЕ ПОЛЕ
-    required double longitude, // <-- НОВОЕ ПОЛЕ
+    String? repairState,
+    String? layout,
+    // Контакты
+    required String contactName,
+    required String contactPhone,
   }) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
@@ -85,13 +100,23 @@ class PropertyService {
           'title': title,
           'description': description,
           'address': address,
+          'latitude': latitude,
+          'longitude': longitude,
+          'areaSqm': areaSqm,
           'pricePerMonth': pricePerMonth,
+          'propertyType': propertyType, // Отправляем Enum строкой (например "OFFICE")
+          'dealType': dealType,
+          'taxIncluded': taxIncluded,
+          'utilityIncluded': utilityIncluded,
+          'depositMonths': depositMonths,
           'powerKw': powerKw,
           'hasWater': hasWater,
           'hasVentilation': hasVentilation,
           'hasSeparateEntrance': hasSeparateEntrance,
-          'latitude': latitude,   // <-- ПЕРЕДАЕМ НА БЭКЕНД
-          'longitude': longitude, // <-- ПЕРЕДАЕМ НА БЭКЕНД
+          'repairState': repairState,
+          'layout': layout,
+          'contactName': contactName,
+          'contactPhone': contactPhone,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
@@ -101,7 +126,6 @@ class PropertyService {
       print('Ошибка при создании объекта: $e');
       return false;
     }
-
   }
 // Архивация (Удаление) объекта
   Future<bool> deleteProperty(int propertyId) async {
