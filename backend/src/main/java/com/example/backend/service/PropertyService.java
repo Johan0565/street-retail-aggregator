@@ -2,6 +2,8 @@ package com.example.backend.service;
 
 import com.example.backend.dto.CreatePropertyRequest;
 import com.example.backend.entity.*;
+import com.example.backend.entity.BusinessCategory;
+import com.example.backend.entity.enums.PropertyStatus;
 import com.example.backend.repository.PropertyRepository;
 import com.example.backend.repository.BusinessCategoryRepository;
 import com.example.backend.repository.UserRepository;
@@ -66,7 +68,6 @@ public class PropertyService {
         User landlord = userRepository.findById(landlordId)
                 .orElseThrow(() -> new RuntimeException("Арендодатель не найден"));
 
-        // Ищем в базе категории соседей, которых указал арендодатель
         Set<BusinessCategory> neighbors = null;
         if (request.getExistingNeighborCategoryIds() != null && !request.getExistingNeighborCategoryIds().isEmpty()) {
             neighbors = new java.util.HashSet<>(
@@ -83,11 +84,35 @@ public class PropertyService {
                 .longitude(request.getLongitude())
                 .areaSqm(request.getAreaSqm())
                 .pricePerMonth(request.getPricePerMonth())
+                // Маппинг новых полей
+                .propertyType(request.getPropertyType())
+                .dealType(request.getDealType())
+                .buildingName(request.getBuildingName())
+                .buildingClass(request.getBuildingClass())
+                .floor(request.getFloor())
+                .totalFloors(request.getTotalFloors())
+                .buildYear(request.getBuildYear())
+                .taxIncluded(request.getTaxIncluded())
+                .opexIncluded(request.getOpexIncluded())
+                .utilityIncluded(request.getUtilityIncluded())
+                .depositMonths(request.getDepositMonths())
+                .rentHolidays(request.getRentHolidays())
+                .legalAddressProvided(request.getLegalAddressProvided())
+                .metroStation(request.getMetroStation())
+                .timeToMetro(request.getTimeToMetro())
                 .powerKw(request.getPowerKw())
                 .hasWater(request.getHasWater())
                 .hasVentilation(request.getHasVentilation())
                 .hasSeparateEntrance(request.getHasSeparateEntrance())
-                .status(PropertyStatus.PUBLISHED) // Для тестов сразу публикуем
+                .repairState(request.getRepairState())
+                .ceilingHeight(request.getCeilingHeight())
+                .layout(request.getLayout())
+                .parking(request.getParking())
+                .security(request.getSecurity())
+                .contactName(request.getContactName())
+                .contactPhone(request.getContactPhone())
+                .agentFee(request.getAgentFee())
+                .status(PropertyStatus.PUBLISHED)
                 .existingNeighbors(neighbors)
                 .build();
 

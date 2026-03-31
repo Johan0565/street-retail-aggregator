@@ -1,5 +1,6 @@
 package com.example.backend.entity;
 
+import com.example.backend.entity.enums.*;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
@@ -42,7 +43,35 @@ public class Property {
     @Enumerated(EnumType.STRING)
     private PropertyStatus status;
 
-    // Технические параметры
+    // --- 1. Базовая информация ---
+    @Enumerated(EnumType.STRING)
+    private PropertyType propertyType;
+
+    @Enumerated(EnumType.STRING)
+    private DealType dealType;
+
+    private String buildingName;
+
+    @Enumerated(EnumType.STRING)
+    private BuildingClass buildingClass;
+
+    private Integer floor;
+    private Integer totalFloors;
+    private Integer buildYear;
+
+    // --- 2. Финансовые условия ---
+    private Boolean taxIncluded;
+    private Boolean opexIncluded;
+    private Boolean utilityIncluded;
+    private Integer depositMonths;
+    private Boolean rentHolidays;
+    private Boolean legalAddressProvided;
+
+    // --- 3. Локация и доступность ---
+    private String metroStation;
+    private Integer timeToMetro; // в минутах
+
+    // --- 4. Технические характеристики ---
     @Column(name = "power_kw")
     private Integer powerKw;
 
@@ -54,6 +83,26 @@ public class Property {
 
     @Column(name = "has_separate_entrance")
     private Boolean hasSeparateEntrance;
+
+    @Enumerated(EnumType.STRING)
+    private RepairState repairState;
+
+    @Column(precision = 4, scale = 2)
+    private BigDecimal ceilingHeight;
+
+    @Enumerated(EnumType.STRING)
+    private LayoutType layout;
+
+    // --- 5. Инфраструктура ---
+    private String parking;
+    private String security;
+
+    // --- 6. Контакты ---
+    private String contactName;
+    private String contactPhone;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal agentFee; // % комиссии (0 если без комиссии)
 
     @OneToMany(mappedBy = "property", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PropertyImage> images;

@@ -1,5 +1,7 @@
 package com.example.backend.dto;
 
+import com.example.backend.entity.*;
+import com.example.backend.entity.enums.*;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.util.Set;
@@ -14,12 +16,44 @@ public class CreatePropertyRequest {
     private BigDecimal areaSqm;
     private BigDecimal pricePerMonth;
 
-    // Технические характеристики
+    // 1. Базовые
+    private PropertyType propertyType;
+    private DealType dealType;
+    private String buildingName;
+    private BuildingClass buildingClass;
+    private Integer floor;
+    private Integer totalFloors;
+    private Integer buildYear;
+
+    // 2. Финансы
+    private Boolean taxIncluded;
+    private Boolean opexIncluded;
+    private Boolean utilityIncluded;
+    private Integer depositMonths;
+    private Boolean rentHolidays;
+    private Boolean legalAddressProvided;
+
+    // 3. Локация
+    private String metroStation;
+    private Integer timeToMetro;
+
+    // 4. Технические
     private Integer powerKw;
     private Boolean hasWater;
     private Boolean hasVentilation;
     private Boolean hasSeparateEntrance;
+    private RepairState repairState;
+    private BigDecimal ceilingHeight;
+    private LayoutType layout;
 
-    // Передаем ID категорий бизнесов, которые уже есть в этом здании
+    // 5. Инфраструктура
+    private String parking;
+    private String security;
+
+    // 6. Контакты
+    private String contactName;
+    private String contactPhone;
+    private BigDecimal agentFee;
+
     private Set<Long> existingNeighborCategoryIds;
 }

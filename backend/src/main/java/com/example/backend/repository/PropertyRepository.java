@@ -2,7 +2,7 @@ package com.example.backend.repository;
 
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.Property;
-import com.example.backend.entity.PropertyStatus;
+import com.example.backend.entity.enums.PropertyStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

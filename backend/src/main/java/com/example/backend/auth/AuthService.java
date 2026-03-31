@@ -3,8 +3,9 @@ package com.example.backend.auth;
 import com.example.backend.Security.JwtService;
 import com.example.backend.dto.*;
 import com.example.backend.entity.*;
+import com.example.backend.entity.enums.Role;
+import com.example.backend.entity.enums.UserStatus;
 import com.example.backend.repository.*;
-import com.example.backend.auth.EmailService; // Импортируем наш сервис писем
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;

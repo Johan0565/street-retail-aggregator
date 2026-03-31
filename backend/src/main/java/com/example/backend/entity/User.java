@@ -1,5 +1,7 @@
 package com.example.backend.entity;
 
+import com.example.backend.entity.enums.Role;
+import com.example.backend.entity.enums.UserStatus;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;

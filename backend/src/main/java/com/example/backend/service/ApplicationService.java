@@ -2,6 +2,9 @@ package com.example.backend.service;
 
 import com.example.backend.dto.ApplicationResponseDto;
 import com.example.backend.entity.*;
+import com.example.backend.entity.enums.ApplicationStatus;
+import com.example.backend.entity.enums.PropertyStatus;
+import com.example.backend.entity.enums.Role;
 import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.PropertyRepository;
 import com.example.backend.repository.UserRepository;
@@ -96,15 +99,15 @@ public class ApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public ApplicationResponseDto getApplicationById(Long applicationId, Long currentUserId, com.example.backend.entity.Role currentUserRole) {
+    public ApplicationResponseDto getApplicationById(Long applicationId, Long currentUserId, Role currentUserRole) {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
         // Проверка безопасности: арендатор может смотреть только свои заявки, арендодатель - только на свои помещения
-        if (currentUserRole == com.example.backend.entity.Role.TENANT && !application.getTenant().getId().equals(currentUserId)) {
+        if (currentUserRole == Role.TENANT && !application.getTenant().getId().equals(currentUserId)) {
             throw new RuntimeException("Доступ запрещен. Это не ваша заявка.");
         }
-        if (currentUserRole == com.example.backend.entity.Role.LANDLORD && !application.getProperty().getLandlord().getId().equals(currentUserId)) {
+        if (currentUserRole == Role.LANDLORD && !application.getProperty().getLandlord().getId().equals(currentUserId)) {
             throw new RuntimeException("Доступ запрещен. Это заявка не на ваше помещение.");
         }
 

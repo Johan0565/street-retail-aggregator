@@ -1,6 +1,6 @@
 package com.example.backend.dto;
 
-import com.example.backend.entity.ApplicationStatus;
+import com.example.backend.entity.enums.ApplicationStatus;
 import lombok.Builder;
 import lombok.Data;
 
