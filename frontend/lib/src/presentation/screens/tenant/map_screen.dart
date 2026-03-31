@@ -8,7 +8,8 @@ import 'favorites_screen.dart';
 
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final bool isLandlordMode; // <-- ДОБАВИЛИ ЭТО
+  const MapScreen({super.key, this.isLandlordMode = false}); // По умолчанию false (для Арендатора)
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -6785,11 +6786,11 @@ class _MapScreenState extends State<MapScreen> {
               child: CircularProgressIndicator(color: Colors.black),
             ),
 
-          // ПЛАВАЮЩИЙ UI
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Row(
+          if (!widget.isLandlordMode) // <-- ДОБАВИЛИ ЭТО УСЛОВИЕ
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Row(
                 children: [
                   Expanded(
                     child: Container(

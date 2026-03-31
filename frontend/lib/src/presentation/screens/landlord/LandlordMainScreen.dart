@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-// ИМПОРТЫ НОВЫХ ЭКРАНОВ (проверь пути относительно src)
+// ИМПОРТЫ ЭКРАНОВ (Обязательно проверь пути!)
+import '../tenant/map_screen.dart'; // <-- Путь до твоей карты
 import 'my_properties_screen.dart';
 import 'add_property_screen.dart';
 import 'incoming_applications_screen.dart';
-// Используем существующий профиль, он универсальный
-import '../tenant/profile_screen.dart'; // <-- ПРОВЕРЬ ПУТЬ
+import '../tenant/profile_screen.dart'; // Универсальный профиль
 
 class LandlordMainScreen extends StatefulWidget {
   const LandlordMainScreen({super.key});
@@ -18,19 +18,17 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
   int _selectedIndex = 0;
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
-  // Список экранов для вкладок
   final List<Widget> _screens = [
-    const MyPropertiesScreen(),         // 0: Мои объекты
-    const PlaceholderAddProperty(),      // 1: Заглушка (чтобы работала навигация, сам экран открывается кнопкой)
-    const IncomingApplicationsScreen(),   // 2: Заявки
-    const ProfileScreen(),              // 3: Профиль
+    const MapScreen(isLandlordMode: true),
+    const MyPropertiesScreen(),
+    const IncomingApplicationsScreen(),
+    const ProfileScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      // ВАЖНО: тело экрана заходит ПОД панель навигации (Floating UI)
       extendBody: true,
 
       body: IndexedStack(
@@ -38,48 +36,60 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
         children: _screens,
       ),
 
-      // Большая центральная кнопка "Добавить"
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Открываем экран добавления как модальное окно (сверху вниз)
-          _openAddPropertyScreen();
-        },
+        onPressed: _openAddPropertyScreen,
         backgroundColor: _primaryOrange,
         elevation: 10,
         shape: const CircleBorder(),
         child: const Icon(Icons.add, color: Colors.white, size: 36),
       ),
 
-      // Плавающая панель навигации (как у Арендатора)
+      // ИСПРАВЛЕННАЯ ПЛАВАЮЩАЯ ПАНЕЛЬ НАВИГАЦИИ (СТИЛЬ КАК У TENANT)
       bottomNavigationBar: SafeArea(
         child: Container(
-          margin: const EdgeInsets.only(left: 16, right: 16, bottom: 20),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          // 1. Сделали отступы как у Арендатора
+          margin: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
+          // 2. Вернули вертикальный паддинг
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.black, // Стильный черный фон
+            // 3. Вернули цвет black87 (чуть прозрачный черный)
+            color: Colors.black87,
             borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.3),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
+                blurRadius: 20, // Вернули размытие тени до 20
+                offset: const Offset(0, 10), // Смещение тени как у Арендатора
               ),
             ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // 0: Мои объекты
-              _buildNavItem(icon: Icons.business_outlined, activeIcon: Icons.business_center, label: 'Объекты', index: 0),
+              // --- ЛЕВАЯ ЖЕСТКАЯ ПОЛОВИНА ---
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
+                    _buildNavItem(icon: Icons.business_outlined, activeIcon: Icons.business_center, label: 'Объекты', index: 1),
+                  ],
+                ),
+              ),
 
-              // Пропуск для центральной кнопки (чтобы иконки не наезжали)
-              const SizedBox(width: 48),
+              // --- ЦЕНТРАЛЬНОЕ МЕСТО ПОД КНОПКУ (Зафиксировано) ---
+              const SizedBox(width: 56),
 
-              // 2: Заявки
-              _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail_rounded, label: 'Заявки', index: 2),
-              // 3: Профиль
-              _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профиль', index: 3),
+              // --- ПРАВАЯ ЖЕСТКАЯ ПОЛОВИНА ---
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail_rounded, label: 'Заявки', index: 2),
+                    _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профиль', index: 3),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -87,17 +97,15 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
     );
   }
 
-  // Метод для открытия экрана добавления
   void _openAddPropertyScreen() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        fullscreenDialog: true, // Кнопка "Закрыть" вместо "Назад"
+        fullscreenDialog: true,
         builder: (context) => const AddPropertyScreen(),
       ),
     );
   }
 
-  // Вспомогательный метод для отрисовки пункта меню (как у Арендатора)
   Widget _buildNavItem({
     required IconData icon,
     required IconData activeIcon,
@@ -114,37 +122,29 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? _primaryOrange.withOpacity(0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min, // Убеждаемся, что кнопка не растягивается бесконечно
           children: [
             Icon(
               isSelected ? activeIcon : icon,
               color: isSelected ? _primaryOrange : Colors.white60,
-              size: 26,
+              size: 24,
             ),
             if (isSelected) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               Text(
                 label,
-                style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 13),
+                style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 12),
               ),
             ]
           ],
         ),
       ),
     );
-  }
-}
-
-// Временная заглушка для 1-го индекса IndexedStack
-class PlaceholderAddProperty extends StatelessWidget {
-  const PlaceholderAddProperty({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox.shrink();
   }
 }
