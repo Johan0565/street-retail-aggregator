@@ -20,16 +20,65 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
     _loadProperties();
   }
 
+  // Загрузка списка объектов
   void _loadProperties() {
     setState(() {
       _propertiesFuture = _propertyService.getMyProperties();
     });
   }
 
+  // Метод для удаления с диалогом подтверждения
+  Future<void> _deleteProperty(int propertyId, String title) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Удаление объекта', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text('Вы уверены, что хотите удалить "$title"?\n\nОбъект будет скрыт, но старые заявки на него останутся доступны.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена', style: TextStyle(color: Colors.black54)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Удалить', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // Показываем индикатор загрузки снизу
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Удаляем...'), duration: Duration(seconds: 1)),
+    );
+
+    final success = await _propertyService.deleteProperty(propertyId);
+
+    if (!mounted) return;
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Объект успешно удален'), backgroundColor: Colors.green),
+      );
+      _loadProperties(); // Перезагружаем список
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ошибка при удалении'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // Светло-серый фон для контраста белых карточек
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text('Мои объекты', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
@@ -51,9 +100,7 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
                 children: [
                   Icon(Icons.business_outlined, size: 80, color: Colors.grey[300]),
                   const SizedBox(height: 16),
-                  const Text('У вас пока нет объектов', style: TextStyle(color: Colors.grey, fontSize: 18)),
-                  const SizedBox(height: 8),
-                  const Text('Нажмите "+" чтобы добавить первое помещение', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                  const Text('У вас пока нет добавленных объектов', style: TextStyle(color: Colors.grey, fontSize: 16)),
                 ],
               ),
             );
@@ -65,91 +112,76 @@ class _MyPropertiesScreenState extends State<MyPropertiesScreen> {
             color: _primaryOrange,
             onRefresh: () async => _loadProperties(),
             child: ListView.separated(
-              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 120), // Большой отступ снизу, чтобы не перекрывала кнопка "+"
+              padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 120),
               itemCount: properties.length,
               separatorBuilder: (context, index) => const SizedBox(height: 16),
               itemBuilder: (context, index) {
                 final property = properties[index];
-                return _buildPropertyCard(property);
+
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Иконка-заглушка для помещения
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: _primaryOrange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.storefront, color: _primaryOrange, size: 30),
+                      ),
+                      const SizedBox(width: 16),
+
+                      // Информация об объекте
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              property.title,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              property.address,
+                              style: const TextStyle(color: Colors.grey, fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${property.pricePerMonth} ₽/мес',
+                              style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // КНОПКА УДАЛЕНИЯ
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red),
+                        onPressed: () => _deleteProperty(property.id, property.title),
+                        tooltip: 'Удалить объект',
+                      ),
+                    ],
+                  ),
+                );
               },
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildPropertyCard(Property property) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Заглушка для фото объекта
-          Container(
-            height: 140,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: const Icon(Icons.storefront, size: 50, color: Colors.black12),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${property.pricePerMonth} ₽ / мес',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _primaryOrange),
-                    ),
-                    // Красивый бейджик статуса (Пока хардкодим "Опубликовано", потом можно брать property.status из JSON)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text('Опубликовано', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  property.title,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        property.address,
-                        style: const TextStyle(color: Colors.grey, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

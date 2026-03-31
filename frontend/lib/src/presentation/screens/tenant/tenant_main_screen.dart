@@ -3,8 +3,6 @@ import 'favorites_screen.dart';
 import 'map_screen.dart';
 import 'my_applications_screen.dart';
 import 'profile_screen.dart';
-// Импортируем карту (перенесем ее код в отдельный файл чуть позже)
-// import 'map_screen.dart';
 
 class TenantMainScreen extends StatefulWidget {
   const TenantMainScreen({super.key});
@@ -34,7 +32,11 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
       // отрисовываться ПОД плавающей навигационной панелью
       extendBody: true,
 
-      body: _screens[_selectedIndex],
+      // ИСПРАВЛЕНИЕ ЗДЕСЬ: Используем IndexedStack для сохранения состояния экранов!
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
 
       // Плавающая панель навигации
       bottomNavigationBar: SafeArea(
@@ -109,24 +111,6 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
               ),
             ]
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ВРЕМЕННАЯ ЗАГЛУШКА ДЛЯ КАРТЫ (чтобы код компилировался)
-class PlaceholderMapScreen extends StatelessWidget {
-  const PlaceholderMapScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.grey[200],
-      child: const Center(
-        child: Text(
-          'Здесь будет Yandex MapKit',
-          style: TextStyle(color: Colors.grey, fontSize: 18),
         ),
       ),
     );

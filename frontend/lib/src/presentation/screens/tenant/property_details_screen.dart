@@ -3,18 +3,26 @@ import 'package:flutter/material.dart';
 import '../../../domain/property.dart';
 import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
-
+import 'package:flutter/material.dart';
+import '../../../domain/property.dart';
+// ... твои остальные импорты ...
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
+  final bool isLandlordMode; // <-- 1. ДОБАВИТЬ ЭТУ СТРОКУ
 
-  const PropertyDetailsScreen({super.key, required this.property});
+  const PropertyDetailsScreen({
+    super.key,
+    required this.property,
+    this.isLandlordMode = false, // <-- 2. ДОБАВИТЬ ЭТУ СТРОКУ (по умолчанию false)
+  });
 
   @override
   State<PropertyDetailsScreen> createState() => _PropertyDetailsScreenState();
 }
 
 class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
+// ... дальше идет твой обычный код экрана ...
   final Color primaryOrange = const Color(0xFFFF8C00);
 
   bool _isFavorite = false;
