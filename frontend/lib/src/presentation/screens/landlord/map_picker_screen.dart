@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 import 'package:geolocator/geolocator.dart';
@@ -17,27 +18,118 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   Point _currentCameraPosition = const Point(latitude: 55.751244, longitude: 37.618423);
   bool _isMoving = false;
 
-  Future<void> _moveToCurrentLocation() async {
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
+  // Контроллеры для поиска
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounceTimer;
 
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
+  List<SuggestItem> _suggestions = [];
+  bool _isSearching = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+
+
+  // 1. МЕТОД АВТОДОПОЛНЕНИЯ (SUGGEST)
+  void _onSearchChanged(String query) {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+
+    if (query.isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      setState(() => _isSearching = true);
+
+      try {
+        final region = await _mapController.getVisibleRegion();
+
+        // ИСПРАВЛЕНИЕ 1: Распаковка кортежа для Suggest
+        final (session, resultFuture) = await YandexSuggest.getSuggestions(
+          text: query,
+          boundingBox: BoundingBox(
+            southWest: region.bottomLeft,
+            northEast: region.topRight,
+          ),
+          suggestOptions: const SuggestOptions(
+            suggestType: SuggestType.geo,
+            suggestWords: true,
+          ),
+        );
+
+        final result = await resultFuture;
+
+        if (result.error != null) {
+          debugPrint('🚨 ОШИБКА SUGGEST: ${result.error}');
+        }
+
+        if (mounted) {
+          setState(() {
+            _suggestions = result.items ?? [];
+            _isSearching = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('Ошибка Suggest: $e');
+        if (mounted) setState(() => _isSearching = false);
       }
-      if (permission == LocationPermission.deniedForever) return;
+    });
+  }
 
-      Position position = await Geolocator.getCurrentPosition();
-      final userPoint = Point(latitude: position.latitude, longitude: position.longitude);
+  // 2. МЕТОД ПОИСКА КООРДИНАТ ПО КЛИКУ НА ПОДСКАЗКУ
+  Future<void> _onSuggestionTapped(SuggestItem item) async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _searchController.text = item.title;
+      _suggestions.clear();
+      _isSearching = true;
+    });
 
-      _mapController.moveCamera(
-        CameraUpdate.newCameraPosition(CameraPosition(target: userPoint, zoom: 16)),
-        animation: const MapAnimation(type: MapAnimationType.smooth, duration: 1.5),
+    // ИСПРАВЛЕНИЕ 2: item.subtitle — это просто строка, а не объект с .text
+    final fullAddress = '${item.title} ${item.subtitle ?? ''}'.trim();
+
+    try {
+      // ИСПРАВЛЕНИЕ 3: Распаковка кортежа для Search
+      final (searchSession, searchResultFuture) = await YandexSearch.searchByText(
+        searchText: fullAddress,
+        geometry: Geometry.fromBoundingBox(
+          const BoundingBox(
+            southWest: Point(latitude: -90, longitude: -180),
+            northEast: Point(latitude: 90, longitude: 180),
+          ),
+        ),
+        searchOptions: const SearchOptions(searchType: SearchType.geo),
       );
+
+      final result = await searchResultFuture;
+
+      Point? targetPoint;
+      if (result.items != null && result.items!.isNotEmpty) {
+        final topItem = result.items!.first;
+        targetPoint = topItem.toponymMetadata?.balloonPoint ??
+            (topItem.geometry.isNotEmpty ? topItem.geometry.first.point : null);
+      }
+
+      if (targetPoint != null) {
+        _mapController.moveCamera(
+          CameraUpdate.newCameraPosition(CameraPosition(target: targetPoint, zoom: 16)),
+          animation: const MapAnimation(type: MapAnimationType.smooth, duration: 1.5),
+        );
+      } else {
+        debugPrint('Координаты не найдены');
+      }
     } catch (e) {
-      print('Ошибка локации: $e');
+      debugPrint('Ошибка получения координат: $e');
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
     }
   }
 
@@ -58,7 +150,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               _mapController.moveCamera(
                   CameraUpdate.newCameraPosition(CameraPosition(target: _currentCameraPosition, zoom: 12))
               );
-              _moveToCurrentLocation();
+
             },
             onCameraPositionChanged: (cameraPosition, reason, finished) {
               setState(() {
@@ -81,13 +173,71 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
           ),
 
           Positioned(
-            bottom: 120, right: 16,
-            child: FloatingActionButton(
-              backgroundColor: Colors.white,
-              onPressed: _moveToCurrentLocation,
-              child: const Icon(Icons.my_location, color: Colors.black),
+            top: 16, left: 16, right: 16,
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 2))],
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      hintText: 'Поиск адреса...',
+                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                      suffixIcon: _isSearching
+                          ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
+                          : _searchController.text.isNotEmpty
+                          ? IconButton(
+                        icon: const Icon(Icons.clear, color: Colors.grey),
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                        },
+                      )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                  ),
+                ),
+
+                if (_suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    constraints: const BoxConstraints(maxHeight: 250),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 2))],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _suggestions.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final item = _suggestions[index];
+                        return ListTile(
+                          leading: const Icon(Icons.location_city, color: Colors.grey),
+                          title: Text(item.title),
+                          // ИСПРАВЛЕНИЕ 4: Правильное обращение к subtitle в UI
+                          subtitle: item.subtitle != null && item.subtitle!.isNotEmpty
+                              ? Text(item.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis)
+                              : null,
+                          onTap: () => _onSuggestionTapped(item),
+                        );
+                      },
+                    ),
+                  ),
+              ],
             ),
           ),
+
+
 
           Align(
             alignment: Alignment.bottomCenter,
@@ -100,7 +250,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               ),
               child: ElevatedButton(
                 onPressed: _isMoving ? null : () {
-                  // Просто возвращаем точные координаты
                   Navigator.pop(context, {
                     'latitude': _currentCameraPosition.latitude,
                     'longitude': _currentCameraPosition.longitude,

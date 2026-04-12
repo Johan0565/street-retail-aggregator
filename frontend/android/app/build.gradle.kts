@@ -8,7 +8,7 @@ dependencies {
     // ... какие-то другие зависимости ...
 
     // Добавляем эту строку для Yandex MapKit:
-    implementation("com.yandex.android:maps.mobile:4.4.0-lite")
+    implementation("com.yandex.android:maps.mobile:4.3.1-full")
 }
 android {
     namespace = "com.example.frontend"

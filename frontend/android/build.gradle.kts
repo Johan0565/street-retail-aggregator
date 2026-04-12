@@ -18,7 +18,14 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(":app")
 }
-
+buildscript {
+    extra["yandexMapkitVersion"] = "4.3.1-full" // <--- ДОБАВИТЬ ЭТУ СТРОКУ
+    repositories {
+        google()
+        mavenCentral()
+    }
+    // ...
+}
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
