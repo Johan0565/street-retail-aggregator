@@ -70,7 +70,75 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   }
 
   void _showApplicationSheet(BuildContext context, Property property) {
-    // ... Твой код BottomSheet (оставляем без изменений, он отличный) ...
+    final TextEditingController letterController = TextEditingController();
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom, // Чтобы клавиатура не перекрывала
+                  left: 24, right: 24, top: 24
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Оставить заявку', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: letterController,
+                    maxLines: 5,
+                    decoration: InputDecoration(
+                      hintText: 'Напишите сопроводительное письмо арендодателю...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryOrange, width: 2)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSubmitting ? null : () async {
+                        final text = letterController.text.trim();
+                        if (text.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Напишите сообщение')));
+                          return;
+                        }
+
+                        setStateSheet(() => isSubmitting = true);
+                        final success = await ApplicationService().createApplication(property.id, text);
+                        setStateSheet(() => isSubmitting = false);
+
+                        if (success) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Заявка успешно отправлена!'), backgroundColor: Colors.green));
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ошибка при отправке'), backgroundColor: Colors.red));
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                      ),
+                      child: isSubmitting
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('Отправить', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+                    ),
+                  )
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
