@@ -114,6 +114,11 @@ public class PropertyService {
                 .agentFee(request.getAgentFee())
                 .status(PropertyStatus.PUBLISHED)
                 .existingNeighbors(neighbors)
+                .cadastralNumber(request.getCadastralNumber())
+                .accessType(request.getAccessType())
+                .heatingType(request.getHeatingType())
+                .furnitureState(request.getFurnitureState())
+                .isOccupied(request.getIsOccupied() != null ? request.getIsOccupied() : false)
                 .build();
 
         return propertyRepository.save(property);

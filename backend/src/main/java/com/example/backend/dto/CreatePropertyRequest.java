@@ -55,5 +55,11 @@ public class CreatePropertyRequest {
     private String contactPhone;
     private BigDecimal agentFee;
 
+    private String cadastralNumber;
+    private AccessType accessType;
+    private HeatingType heatingType;
+    private FurnitureState furnitureState;
+    private Boolean isOccupied;
+
     private Set<Long> existingNeighborCategoryIds;
 }

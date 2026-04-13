@@ -24,6 +24,12 @@ class Property {
   final String? contactName;
   final String? contactPhone;
 
+  final String? cadastralNumber;
+  final String? accessType;
+  final String? heatingType;
+  final String? furnitureState;
+  final bool? isOccupied;
+
   Property({
     required this.id,
     required this.title,
@@ -34,6 +40,11 @@ class Property {
     required this.areaSqm,
     required this.pricePerMonth,
     this.propertyType,
+    this.cadastralNumber,
+    this.accessType,
+    this.heatingType,
+    this.furnitureState,
+    this.isOccupied,
     this.dealType,
     required this.powerKw,
     required this.hasWater,
@@ -65,6 +76,11 @@ class Property {
       layout: json['layout'],
       contactName: json['contactName'],
       contactPhone: json['contactPhone'],
+      cadastralNumber: json['cadastralNumber'],
+      accessType: json['accessType'],
+      heatingType: json['heatingType'],
+      furnitureState: json['furnitureState'],
+      isOccupied: json['isOccupied'] ?? false,
     );
   }
 }

@@ -10,7 +10,7 @@ class AddPropertyScreen extends StatefulWidget {
 }
 
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
-  int _currentStep = 0; // Текущий шаг Wizard'а
+  int _currentStep = 0;
   final _formKeys = [GlobalKey<FormState>(), GlobalKey<FormState>(), GlobalKey<FormState>(), GlobalKey<FormState>()];
 
   final PropertyService _propertyService = PropertyService();
@@ -27,17 +27,28 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final _contactNameController = TextEditingController();
   final _contactPhoneController = TextEditingController();
 
+  // --- НОВЫЙ КОНТРОЛЛЕР ---
+  final _cadastralController = TextEditingController();
+
   // Состояния (Выпадающие списки и переключатели)
   String? _selectedPropertyType;
   String? _selectedDealType;
   String? _selectedRepairState;
   String? _selectedLayout;
 
+  // --- НОВЫЕ СОСТОЯНИЯ ---
+  String? _selectedAccessType;
+  String? _selectedHeatingType;
+  String? _selectedFurnitureState;
+
   bool _taxIncluded = false;
   bool _utilityIncluded = false;
   bool _hasWater = false;
   bool _hasVentilation = false;
   bool _hasSeparateEntrance = false;
+
+  // --- НОВЫЙ ПЕРЕКЛЮЧАТЕЛЬ ---
+  bool _isOccupied = false;
 
   double? _selectedLat;
   double? _selectedLon;
@@ -48,6 +59,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _titleController.dispose(); _addressController.dispose(); _areaController.dispose();
     _priceController.dispose(); _depositController.dispose(); _powerController.dispose();
     _descController.dispose(); _contactNameController.dispose(); _contactPhoneController.dispose();
+    _cadastralController.dispose(); // Не забываем очищать
     super.dispose();
   }
 
@@ -82,6 +94,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         layout: _selectedLayout,
         contactName: _contactNameController.text.trim(),
         contactPhone: _contactPhoneController.text.trim(),
+
+        // --- ПЕРЕДАЕМ НОВЫЕ ПОЛЯ В СЕРВИС ---
+        cadastralNumber: _cadastralController.text.trim().isEmpty ? null : _cadastralController.text.trim(),
+        accessType: _selectedAccessType,
+        heatingType: _selectedHeatingType,
+        furnitureState: _selectedFurnitureState,
+        isOccupied: _isOccupied,
       );
 
       if (success && mounted) {
@@ -109,20 +128,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       ),
       body: SafeArea(
         child: Theme(
-          data: ThemeData(
-            colorScheme: ColorScheme.light(primary: _primaryOrange), // Цвет активных шагов Stepper
-          ),
+          data: ThemeData(colorScheme: ColorScheme.light(primary: _primaryOrange)),
           child: Stepper(
             type: StepperType.vertical,
             currentStep: _currentStep,
             onStepTapped: (step) => setState(() => _currentStep = step),
             onStepContinue: () {
-              // Валидация текущего шага перед переходом
               if (_formKeys[_currentStep].currentState!.validate()) {
                 if (_currentStep < 3) {
                   setState(() => _currentStep += 1);
                 } else {
-                  _submitForm(); // Конец, отправляем
+                  _submitForm();
                 }
               }
             },
@@ -180,6 +196,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                       const SizedBox(height: 16),
                       _buildTextField(controller: _areaController, label: 'Общая площадь (м²)', icon: Icons.square_foot, isNumber: true),
                       const SizedBox(height: 16),
+                      // --- НОВОЕ ПОЛЕ (Необязательное) ---
+                      _buildTextField(controller: _cadastralController, label: 'Кадастровый номер (необяз.)', icon: Icons.numbers, isRequired: false),
+                      const SizedBox(height: 16),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -227,7 +246,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 ),
               ),
 
-              // ШАГ 3: ТЕХНИЧЕСКИЕ
+              // ШАГ 3: ТЕХНИЧЕСКИЕ (Обновлено)
               Step(
                 title: const Text('Технические параметры', style: TextStyle(fontWeight: FontWeight.bold)),
                 isActive: _currentStep >= 2,
@@ -240,12 +259,26 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          Expanded(child: _buildDropdown(label: 'Ремонт', value: _selectedRepairState, items: {'Под чистовую':'PRE_FINISHING', 'Типовой':'TYPICAL', 'Дизайнерский':'DESIGNER', 'Требует ремонта':'SHELL_AND_CORE'}, onChanged: (v) => setState(() => _selectedRepairState = v))),
+                          Expanded(child: _buildDropdown(label: 'Ремонт', value: _selectedRepairState, items: {'Под чистовую':'PRE_FINISHING', 'Типовой':'TYPICAL', 'Дизайнерский':'DESIGNER', 'Без ремонта':'SHELL_AND_CORE'}, onChanged: (v) => setState(() => _selectedRepairState = v), isRequired: false)),
                           const SizedBox(width: 16),
-                          Expanded(child: _buildDropdown(label: 'Планировка', value: _selectedLayout, items: {'Open Space':'OPEN_SPACE', 'Кабинетная':'CABINET', 'Смешанная':'MIXED'}, onChanged: (v) => setState(() => _selectedLayout = v))),
+                          Expanded(child: _buildDropdown(label: 'Планировка', value: _selectedLayout, items: {'Open Space':'OPEN_SPACE', 'Кабинетная':'CABINET', 'Смешанная':'MIXED'}, onChanged: (v) => setState(() => _selectedLayout = v), isRequired: false)),
                         ],
                       ),
+                      const SizedBox(height: 16),
+
+                      // --- НОВЫЕ ПОЛЯ ИЗ ДОМКЛИКА (Необязательные) ---
+                      Row(
+                        children: [
+                          Expanded(child: _buildDropdown(label: 'Отопление', value: _selectedHeatingType, items: {'Центральное':'CENTRAL', 'Автономное':'AUTONOMOUS', 'Нет':'NONE'}, onChanged: (v) => setState(() => _selectedHeatingType = v), isRequired: false)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildDropdown(label: 'Доступ', value: _selectedAccessType, items: {'24/7':'FREE', 'По расписанию':'SCHEDULE', 'Пропускной':'PASS'}, onChanged: (v) => setState(() => _selectedAccessType = v), isRequired: false)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      _buildDropdown(label: 'Состояние (мебель)', value: _selectedFurnitureState, items: {'Пустое':'EMPTY', 'С мебелью':'FURNISHED', 'Готовый бизнес':'READY_BUSINESS'}, onChanged: (v) => setState(() => _selectedFurnitureState = v), isRequired: false),
+
                       const SizedBox(height: 8),
+                      _buildSwitch(title: 'Сдано в аренду (ГАБ)', value: _isOccupied, icon: Icons.people, onChanged: (v) => setState(() => _isOccupied = v)),
                       _buildSwitch(title: 'Мокрая точка', value: _hasWater, icon: Icons.water_drop, onChanged: (v) => setState(() => _hasWater = v)),
                       _buildSwitch(title: 'Вытяжка', value: _hasVentilation, icon: Icons.air, onChanged: (v) => setState(() => _hasVentilation = v)),
                       _buildSwitch(title: 'Отдельный вход', value: _hasSeparateEntrance, icon: Icons.door_front_door, onChanged: (v) => setState(() => _hasSeparateEntrance = v)),
@@ -282,12 +315,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // Вспомогательный виджет поля ввода
-  Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, bool isNumber = false}) {
+  // ОБНОВЛЕН: добавлен параметр isRequired
+  Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, bool isNumber = false, bool isRequired = true}) {
     return TextFormField(
       controller: controller,
       keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-      validator: (value) => value!.isEmpty ? 'Обязательное поле' : null,
+      validator: isRequired ? (value) => (value == null || value.trim().isEmpty) ? 'Обязательное поле' : null : null,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: Colors.grey),
@@ -297,18 +330,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // Вспомогательный виджет Dropdown (для Enum'ов)
-  Widget _buildDropdown({required String label, required String? value, required Map<String, String> items, required Function(String?) onChanged}) {
+  // ОБНОВЛЕН: добавлен параметр isRequired
+  Widget _buildDropdown({required String label, required String? value, required Map<String, String> items, required Function(String?) onChanged, bool isRequired = true}) {
     return DropdownButtonFormField<String>(
       value: value,
-      validator: (val) => val == null ? 'Укажите' : null,
+      validator: isRequired ? (val) => val == null ? 'Укажите' : null : null,
       decoration: InputDecoration(labelText: label, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16)),
       items: items.entries.map((e) => DropdownMenuItem(value: e.value, child: Text(e.key, style: const TextStyle(fontSize: 14)))).toList(),
       onChanged: onChanged,
     );
   }
 
-  // Вспомогательный виджет переключателя
   Widget _buildSwitch({required String title, required bool value, required IconData icon, required Function(bool) onChanged}) {
     return SwitchListTile(
       title: Text(title, style: const TextStyle(fontSize: 14)),

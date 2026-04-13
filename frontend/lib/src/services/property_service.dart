@@ -87,6 +87,11 @@ class PropertyService {
     required bool hasSeparateEntrance,
     String? repairState,
     String? layout,
+    String? cadastralNumber,
+    String? accessType,
+    String? heatingType,
+    String? furnitureState,
+    bool isOccupied = false,
     // Контакты
     required String contactName,
     required String contactPhone,
@@ -117,6 +122,11 @@ class PropertyService {
           'layout': layout,
           'contactName': contactName,
           'contactPhone': contactPhone,
+          'cadastralNumber': cadastralNumber,
+          'accessType': accessType,
+          'heatingType': heatingType,
+          'furnitureState': furnitureState,
+          'isOccupied': isOccupied,
         },
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );

@@ -1,6 +1,8 @@
 package com.example.backend.entity;
 
 import com.example.backend.entity.enums.*;
+import com.example.backend.entity.enums.AccessType;
+import com.example.backend.entity.enums.FurnitureState;
 import jakarta.persistence.*;
 import lombok.*;
 import java.math.BigDecimal;
@@ -114,4 +116,17 @@ public class Property {
             inverseJoinColumns = @JoinColumn(name = "category_id")
     )
     private Set<BusinessCategory> existingNeighbors;
+    private String cadastralNumber;
+
+    @Enumerated(EnumType.STRING)
+    private AccessType accessType;
+
+    @Enumerated(EnumType.STRING)
+    private HeatingType heatingType;
+
+    @Enumerated(EnumType.STRING)
+    private FurnitureState furnitureState;
+
+    @Column(name = "is_occupied")
+    private Boolean isOccupied; // Сдается сейчас или пустует
 }
