@@ -52,8 +52,8 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       try {
         final region = await _mapController.getVisibleRegion();
 
-        // ИСПРАВЛЕНИЕ 1: Распаковка кортежа для Suggest
-        final (session, resultFuture) = await YandexSuggest.getSuggestions(
+        // ИСПРАВЛЕНИЕ 1: Дожидаемся ответа и распаковываем
+        final suggestTuple = await YandexSuggest.getSuggestions(
           text: query,
           boundingBox: BoundingBox(
             southWest: region.bottomLeft,
@@ -64,8 +64,10 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             suggestWords: true,
           ),
         );
+        final resultFuture = suggestTuple.$2;
 
         final result = await resultFuture;
+        if (result == null) return;
 
         if (result.error != null) {
           debugPrint('🚨 ОШИБКА SUGGEST: ${result.error}');
@@ -95,21 +97,37 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
     // ИСПРАВЛЕНИЕ 2: item.subtitle — это просто строка, а не объект с .text
     final fullAddress = '${item.title} ${item.subtitle ?? ''}'.trim();
+    await _performSearch(fullAddress);
+  }
+
+  // 3. МЕТОД ПРЯМОГО ПОИСКА
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _suggestions.clear();
+      _isSearching = true;
+    });
 
     try {
       // ИСПРАВЛЕНИЕ 3: Распаковка кортежа для Search
-      final (searchSession, searchResultFuture) = await YandexSearch.searchByText(
-        searchText: fullAddress,
+      final searchTuple = await YandexSearch.searchByText(
+        searchText: query,
         geometry: Geometry.fromBoundingBox(
           const BoundingBox(
-            southWest: Point(latitude: -90, longitude: -180),
-            northEast: Point(latitude: 90, longitude: 180),
+            southWest: Point(latitude: -89, longitude: -180),
+            northEast: Point(latitude: 89, longitude: 180),
           ),
         ),
         searchOptions: const SearchOptions(searchType: SearchType.geo),
       );
+      final searchResultFuture = searchTuple.$2;
 
       final result = await searchResultFuture;
+      if (result == null) {
+        if (mounted) setState(() => _isSearching = false);
+        return;
+      }
 
       Point? targetPoint;
       if (result.items != null && result.items!.isNotEmpty) {
@@ -125,6 +143,11 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         );
       } else {
         debugPrint('Координаты не найдены');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Адрес не найден. Попробуйте уточнить запрос.')),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Ошибка получения координат: $e');
@@ -185,9 +208,14 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   child: TextField(
                     controller: _searchController,
                     onChanged: _onSearchChanged,
+                    onSubmitted: _performSearch,
+                    textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
                       hintText: 'Поиск адреса...',
-                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                      prefixIcon: GestureDetector(
+                        onTap: () => _performSearch(_searchController.text),
+                        child: const Icon(Icons.search, color: Colors.grey),
+                      ),
                       suffixIcon: _isSearching
                           ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
                           : _searchController.text.isNotEmpty

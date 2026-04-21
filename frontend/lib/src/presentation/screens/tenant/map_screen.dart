@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import '../../../domain/property.dart';
 import '../../../services/property_service.dart';
 import 'property_details_screen.dart';
@@ -6681,9 +6683,38 @@ class _MapScreenState extends State<MapScreen> {
         );
       }).toList();
 
+      final clusterizedCollection = ClusterizedPlacemarkCollection(
+        mapId: const MapObjectId('clusterized_collection'),
+        placemarks: placemarks,
+        radius: 40,
+        minZoom: 15,
+        onClusterAdded: (ClusterizedPlacemarkCollection self, Cluster cluster) async {
+          return cluster.copyWith(
+            appearance: cluster.appearance.copyWith(
+              opacity: 1.0,
+              icon: PlacemarkIcon.single(
+                PlacemarkIconStyle(
+                  image: BitmapDescriptor.fromBytes(
+                    await _buildClusterIcon(cluster.size),
+                  ),
+                  scale: 1.0, // Уменьшаем масштаб, так как иконка генерируется большого размера для качества
+                ),
+              ),
+            ),
+          );
+        },
+        onClusterTap: (ClusterizedPlacemarkCollection self, Cluster cluster) {
+          // Приближаем карту при нажатии на кластер
+          mapController.moveCamera(
+            CameraUpdate.zoomIn(),
+            animation: const MapAnimation(type: MapAnimationType.linear, duration: 0.3),
+          );
+        },
+      );
+
       if (mounted) {
         setState(() {
-          mapObjects = placemarks;
+          mapObjects = [clusterizedCollection];
           _isLoading = false;
         });
       }
@@ -6695,6 +6726,50 @@ class _MapScreenState extends State<MapScreen> {
         );
       }
     }
+  }
+
+  Future<Uint8List> _buildClusterIcon(int clusterSize) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const size = Size(140, 140);
+    
+    final paint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.fill;
+      
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFF8C00) // _primaryOrange
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12;
+      
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width / 2, paint);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width / 2 - borderPaint.strokeWidth / 2, borderPaint);
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: clusterSize.toString(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 60,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        (size.width - textPainter.width) / 2,
+        (size.height - textPainter.height) / 2,
+      ),
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.width.toInt(), size.height.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   void _showPropertyDetails(Property property) {

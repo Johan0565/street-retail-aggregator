@@ -330,13 +330,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     );
   }
 
-  // ОБНОВЛЕН: добавлен параметр isRequired
   Widget _buildDropdown({required String label, required String? value, required Map<String, String> items, required Function(String?) onChanged, bool isRequired = true}) {
     return DropdownButtonFormField<String>(
+      isExpanded: true,
       value: value,
       validator: isRequired ? (val) => val == null ? 'Укажите' : null : null,
       decoration: InputDecoration(labelText: label, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16)),
-      items: items.entries.map((e) => DropdownMenuItem(value: e.value, child: Text(e.key, style: const TextStyle(fontSize: 14)))).toList(),
+      items: items.entries.map((e) => DropdownMenuItem(value: e.value, child: Text(e.key, style: const TextStyle(fontSize: 14), overflow: TextOverflow.ellipsis))).toList(),
       onChanged: onChanged,
     );
   }
