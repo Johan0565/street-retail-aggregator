@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../domain/application_model.dart';
 import '../../../services/application_service.dart';
+import '../chat/chat_screen.dart';
 
 class MyApplicationsScreen extends StatefulWidget {
   const MyApplicationsScreen({super.key});
@@ -348,6 +349,33 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ChatScreen(
+                                  applicationId: app.id,
+                                  applicationTitle: app.property.title,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                          label: const Text('Чат с владельцем'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primaryOrange,
+                            side: BorderSide(color: _primaryOrange),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 );
