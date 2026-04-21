@@ -15,18 +15,6 @@ cd frontend
 flutter run
 ```
 
-### Без Docker
-
-```bash
-# Терминал 1 - Бэкенд
-cd backend
-./gradlew bootRun
-
-# Терминал 2 - Фронтенд
-cd frontend
-flutter run
-```
-
 ## 📦 Структура проекта
 
 ```
@@ -94,4 +82,4 @@ street-retail-aggregator/
 
 ---
 *Проект разработан в рамках курсовой работы.*
-Последний тест: 19.03.2026
+Последний тест: 21.04.2026

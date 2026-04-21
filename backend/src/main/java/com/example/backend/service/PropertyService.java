@@ -1,13 +1,10 @@
 package com.example.backend.service;
 
 import com.example.backend.dto.CreatePropertyRequest;
+import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.*;
-import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.enums.PropertyStatus;
-import com.example.backend.repository.PropertyRepository;
-import com.example.backend.repository.BusinessCategoryRepository;
-import com.example.backend.repository.UserRepository;
-import com.example.backend.repository.TenantProfileRepository;
+import com.example.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,38 +21,33 @@ public class PropertyService {
     private final TenantProfileRepository tenantProfileRepository;
     private final UserRepository userRepository;
     private final BusinessCategoryRepository businessCategoryRepository;
+    private final SearchProfileRepository searchProfileRepository;
+    private final PropertyScoringService propertyScoringService;
+
+    /**
+     * Получить рекомендованные помещения для арендатора.
+     * Если у арендатора есть активный проект поиска — использует скоринг.
+     * Если нет — возвращает все опубликованные без скоринга.
+     */
     @Transactional(readOnly = true)
     public List<Property> getRecommendedPropertiesForTenant(Long tenantUserId) {
-        TenantProfile tenant = tenantProfileRepository.findById(tenantUserId)
-                .orElseThrow(() -> new RuntimeException("Профиль арендатора не найден"));
+        List<Property> allPublished = propertyRepository.findByStatus(PropertyStatus.PUBLISHED);
 
-        BusinessCategory targetCategory = tenant.getTargetBusinessCategory();
+        // Ищем активный проект поиска
+        var activeProfiles = searchProfileRepository.findByTenantIdAndIsActiveTrue(tenantUserId);
 
-        List<Property> allPublishedProperties = propertyRepository.findByStatus(PropertyStatus.PUBLISHED);
-
-        return allPublishedProperties.stream()
-                .sorted((p1, p2) -> Integer.compare(
-                        calculateRecommendationScore(p2, targetCategory),
-                        calculateRecommendationScore(p1, targetCategory)
-                ))
-                .collect(Collectors.toList());
-    }
-
-    private int calculateRecommendationScore(Property property, BusinessCategory targetCategory) {
-        int score = 100;
-
-        boolean hasDirectCompetitor = property.getExistingNeighbors().stream()
-                .anyMatch(neighborCategory -> neighborCategory.getId().equals(targetCategory.getId()));
-
-        if (hasDirectCompetitor) {
-            score -= 80;
+        if (!activeProfiles.isEmpty()) {
+            // Используем первый активный профиль для скоринга
+            SearchProfile activeProfile = activeProfiles.get(0);
+            return propertyScoringService
+                    .scoreAndRankProperties(activeProfile, allPublished)
+                    .stream()
+                    .map(ScoredPropertyDto::getProperty)
+                    .collect(Collectors.toList());
         }
 
-        if (targetCategory.getId() == 3L && !property.getHasWater()) {
-            score -= 50;
-        }
-
-        return score;
+        // Нет активного профиля — возвращаем без скоринга
+        return allPublished;
     }
 
     @Transactional(readOnly = true)
