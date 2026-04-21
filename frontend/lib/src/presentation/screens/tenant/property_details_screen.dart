@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../../domain/property.dart';
+import '../../../domain/search_profile.dart';
 import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
   final bool isLandlordMode;
+  final ScoredProperty? scoredProperty; // необязательный результат скоринга
 
   const PropertyDetailsScreen({
     super.key,
     required this.property,
     this.isLandlordMode = false,
+    this.scoredProperty,
   });
 
   @override
@@ -67,6 +70,72 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   String _translateEnum(String? value, Map<String, String> translations) {
     if (value == null) return 'Не указано';
     return translations[value] ?? value;
+  }
+
+  // Карточка скоринга — показывает бейджик и 4 полоски прогресса
+  Widget _buildScoringCard(ScoredProperty scored) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [scored.flutterColor.withOpacity(0.08), scored.flutterColor.withOpacity(0.02)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scored.flutterColor.withOpacity(0.25), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: scored.flutterColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                '${scored.totalScore}% — ${scored.matchLabel}',
+                style: TextStyle(color: scored.flutterColor, fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _scoreBar('Финансовый', scored.financialScore, 20),
+          _scoreBar('Технический', scored.technicalScore, 40),
+          _scoreBar('Локация', scored.locationScore, 25),
+          _scoreBar('Конкуренты', scored.competitorScore, 15),
+        ],
+      ),
+    );
+  }
+
+  Widget _scoreBar(String label, int score, int max) {
+    final pct = max > 0 ? score / max : 0.0;
+    final color = pct > 0.7
+        ? const Color(0xFF22C55E)
+        : pct > 0.4
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFFEF4444);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(width: 100, child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54))),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: pct.clamp(0.0, 1.0),
+                backgroundColor: Colors.grey[200],
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                minHeight: 10,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('$score/$max', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black45)),
+        ],
+      ),
+    );
   }
 
   void _showApplicationSheet(BuildContext context, Property property) {
@@ -191,7 +260,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. ЗАГОЛОВОК И ЦЕНА
+          // 1. ЗАГОЛОВОК И ЦЕНА
                   Text('${widget.property.pricePerMonth} ₽ / мес', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: primaryOrange)),
                   const SizedBox(height: 8),
                   Text(widget.property.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, height: 1.2)),
@@ -204,6 +273,12 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                       Expanded(child: Text(widget.property.address, style: const TextStyle(color: Colors.black87, fontSize: 15))),
                     ],
                   ),
+                  // Блок скоринга (если есть)
+                  if (widget.scoredProperty != null) ...
+                    [
+                      const SizedBox(height: 16),
+                      _buildScoringCard(widget.scoredProperty!),
+                    ],
                   const SizedBox(height: 24),
 
                   // 2. ГЛАВНЫЕ ХАРАКТЕРИСТИКИ (Грид)

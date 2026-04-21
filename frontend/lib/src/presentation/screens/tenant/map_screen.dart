@@ -1,12 +1,13 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import '../../../domain/property.dart';
+import '../../../domain/search_profile.dart';
 import '../../../services/property_service.dart';
+import '../../../services/search_profile_service.dart';
 import 'property_details_screen.dart';
+import 'search_profiles_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
-import 'favorites_screen.dart';
 
 class MapScreen extends StatefulWidget {
   final bool isLandlordMode;
@@ -19,9 +20,16 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   late YandexMapController mapController;
   final PropertyService _propertyService = PropertyService();
+  final SearchProfileService _scoringService = SearchProfileService();
 
   List<MapObject> mapObjects = [];
   bool _isLoading = false;
+
+  // Скоринг
+  List<SearchProfile> _myProfiles = [];
+  SearchProfile? _activeProfile;
+  // Кэш: propertyId -> ScoredProperty (для bottomSheet)
+  Map<int, ScoredProperty> _scoreCache = {};
 
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
@@ -6656,32 +6664,65 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _loadProfilesThenProperties();
+  }
+
+  Future<void> _loadProfilesThenProperties() async {
+    if (!widget.isLandlordMode) {
+      final profiles = await _scoringService.getMyProfiles();
+      if (mounted) {
+        setState(() {
+          _myProfiles = profiles;
+          _activeProfile = profiles.isNotEmpty ? profiles.first : null;
+        });
+      }
+    }
     _loadProperties();
   }
 
   Future<void> _loadProperties() async {
-    if (_isLoading) return; // Защита от двойного клика
+    if (_isLoading) return;
     setState(() => _isLoading = true);
 
     try {
-      final properties = await _propertyService.getAllProperties();
+      List<Property> properties;
+      final Map<int, ScoredProperty> newCache = {};
 
-      final placemarks = properties.map((property) {
-        return PlacemarkMapObject(
+      // Если есть активный профиль — загружаем со скорингом
+      if (_activeProfile != null && !widget.isLandlordMode) {
+        final scored = await _scoringService.getScoredProperties(_activeProfile!.id);
+        for (final sp in scored) {
+          newCache[sp.property.id] = sp;
+        }
+        properties = scored.map((sp) => sp.property).toList();
+      } else {
+        properties = await _propertyService.getAllProperties();
+      }
+
+      // Строим маркеры с цветом из скоринга
+      final List<PlacemarkMapObject> placemarks = [];
+      for (final property in properties) {
+        final scored = newCache[property.id];
+        final markerColor = scored != null ? scored.flutterColor : Colors.black;
+        final score = scored?.totalScore;
+
+        placemarks.add(PlacemarkMapObject(
           mapId: MapObjectId('property_${property.id}'),
           point: Point(latitude: property.latitude, longitude: property.longitude),
           opacity: 1,
           icon: PlacemarkIcon.single(
             PlacemarkIconStyle(
-              image: BitmapDescriptor.fromAssetImage('assets/gps.png'),
-              scale: 0.2,
+              image: BitmapDescriptor.fromBytes(
+                await _buildMarkerIcon(markerColor, score),
+              ),
+              scale: 1.0,
             ),
           ),
           onTap: (PlacemarkMapObject self, Point point) {
             _showPropertyDetails(property);
           },
-        );
-      }).toList();
+        ));
+      }
 
       final clusterizedCollection = ClusterizedPlacemarkCollection(
         mapId: const MapObjectId('clusterized_collection'),
@@ -6697,14 +6738,13 @@ class _MapScreenState extends State<MapScreen> {
                   image: BitmapDescriptor.fromBytes(
                     await _buildClusterIcon(cluster.size),
                   ),
-                  scale: 1.0, // Уменьшаем масштаб, так как иконка генерируется большого размера для качества
+                  scale: 1.0,
                 ),
               ),
             ),
           );
         },
         onClusterTap: (ClusterizedPlacemarkCollection self, Cluster cluster) {
-          // Приближаем карту при нажатии на кластер
           mapController.moveCamera(
             CameraUpdate.zoomIn(),
             animation: const MapAnimation(type: MapAnimationType.linear, duration: 0.3),
@@ -6715,6 +6755,7 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         setState(() {
           mapObjects = [clusterizedCollection];
+          _scoreCache = newCache;
           _isLoading = false;
         });
       }
@@ -6726,6 +6767,36 @@ class _MapScreenState extends State<MapScreen> {
         );
       }
     }
+  }
+
+  // Генерация цветного маркера с баллом скоринга
+  Future<Uint8List> _buildMarkerIcon(Color color, int? score) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const size = Size(120, 120);
+
+    final paint = Paint()..color = color..style = PaintingStyle.fill;
+    final borderPaint = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 8;
+
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width / 2, paint);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width / 2 - 4, borderPaint);
+
+    if (score != null) {
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '$score%',
+          style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.bold),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      tp.layout();
+      tp.paint(canvas, Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
+    }
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.width.toInt(), size.height.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   Future<Uint8List> _buildClusterIcon(int clusterSize) async {
@@ -6773,6 +6844,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _showPropertyDetails(Property property) {
+    final scored = _scoreCache[property.id];
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -6785,6 +6857,30 @@ class _MapScreenState extends State<MapScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Бейджик скоринга
+              if (scored != null) ...
+                [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: scored.flutterColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: scored.flutterColor.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.auto_awesome, color: scored.flutterColor, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${scored.totalScore}% — ${scored.matchLabel}',
+                          style: TextStyle(color: scored.flutterColor, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               Text(
                 property.title,
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -6794,8 +6890,15 @@ class _MapScreenState extends State<MapScreen> {
                 '${property.pricePerMonth} ₽ / мес',
                 style: TextStyle(fontSize: 18, color: _primaryOrange, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 24),
-
+              if (scored != null) ...
+                [
+                  const SizedBox(height: 12),
+                  _buildScoreBar('Финансы', scored.financialScore, 20),
+                  _buildScoreBar('Технические', scored.technicalScore, 40),
+                  _buildScoreBar('Локация', scored.locationScore, 25),
+                  _buildScoreBar('Конкуренты', scored.competitorScore, 15),
+                ],
+              const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -6806,7 +6909,8 @@ class _MapScreenState extends State<MapScreen> {
                       MaterialPageRoute(
                         builder: (context) => PropertyDetailsScreen(
                           property: property,
-                          isLandlordMode: widget.isLandlordMode, // Пробрасываем роль
+                          scoredProperty: scored,
+                          isLandlordMode: widget.isLandlordMode,
                         ),
                       ),
                     );
@@ -6814,20 +6918,43 @@ class _MapScreenState extends State<MapScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: const Text(
-                    'Подробнее',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
+                  child: const Text('Подробнее',
+                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               )
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildScoreBar(String label, int score, int max) {
+    final pct = max > 0 ? score / max : 0.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54))),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct.clamp(0.0, 1.0),
+                backgroundColor: Colors.grey[200],
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  pct > 0.7 ? const Color(0xFF22C55E) : pct > 0.4 ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
+                ),
+                minHeight: 8,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('$score/$max', style: const TextStyle(fontSize: 11, color: Colors.black45, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 
@@ -6874,58 +7001,102 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // 3. СТРОКА ПОИСКА (Только для арендатора)
+          // 3. ВЕРХНЯЯ ПАНЕЛЬ (Только для арендатора)
           if (!widget.isLandlordMode)
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.15),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5),
+                    // Строка поиска + кнопка фильтров
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(0, 5))],
                             ),
-                          ],
-                        ),
-                        child: const TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Поиск адреса...',
-                            hintStyle: TextStyle(color: Colors.black38),
-                            prefixIcon: Icon(Icons.search, color: Colors.black54),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(vertical: 14),
+                            child: const TextField(
+                              decoration: InputDecoration(
+                                hintText: 'Поиск адреса...',
+                                hintStyle: TextStyle(color: Colors.black38),
+                                prefixIcon: Icon(Icons.search, color: Colors.black54),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(vertical: 14),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 15,
-                            offset: const Offset(0, 5),
+                        const SizedBox(width: 12),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black87,
+                            shape: BoxShape.circle,
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 5))],
                           ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: Icon(Icons.tune, color: _primaryOrange),
-                        onPressed: () {},
-                        padding: const EdgeInsets.all(12),
-                      ),
+                          child: IconButton(
+                            icon: Icon(Icons.tune, color: _primaryOrange),
+                            onPressed: () async {
+                              final result = await Navigator.push<bool>(
+                                context,
+                                MaterialPageRoute(builder: (_) => const SearchProfilesScreen()),
+                              );
+                              if (result == true || result == null) {
+                                _loadProfilesThenProperties();
+                              }
+                            },
+                            padding: const EdgeInsets.all(12),
+                          ),
+                        ),
+                      ],
                     ),
+                    // Dropdown выбора профиля поиска
+                    if (_myProfiles.isNotEmpty) ...
+                      [
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4))],
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              isExpanded: true,
+                              value: _activeProfile?.id,
+                              icon: Icon(Icons.keyboard_arrow_down_rounded, color: _primaryOrange),
+                              hint: const Text('Выбрать проект поиска', style: TextStyle(fontSize: 13)),
+                              style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600),
+                              items: _myProfiles.map((p) {
+                                return DropdownMenuItem<int>(
+                                  value: p.id,
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.manage_search_rounded, size: 16, color: _primaryOrange),
+                                      const SizedBox(width: 6),
+                                      Expanded(child: Text(p.name, overflow: TextOverflow.ellipsis)),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val == null) return;
+                                setState(() {
+                                  _activeProfile = _myProfiles.firstWhere((p) => p.id == val);
+                                });
+                                _loadProperties();
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
                   ],
-                ), // Исправлено: добавлены закрывающие скобки для Row, Padding и SafeArea
+                ),
               ),
             ),
         ],

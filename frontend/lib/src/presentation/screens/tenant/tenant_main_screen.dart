@@ -3,6 +3,7 @@ import 'favorites_screen.dart';
 import 'map_screen.dart';
 import 'my_applications_screen.dart';
 import 'profile_screen.dart';
+import 'search_profiles_screen.dart';
 
 class TenantMainScreen extends StatefulWidget {
   const TenantMainScreen({super.key});
@@ -21,6 +22,7 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
     const MapScreen(),
     const FavoritesScreen(),
     const MyApplicationsScreen(),
+    const SearchProfilesScreen(),
     const ProfileScreen(),
   ];
 
@@ -60,7 +62,8 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
               _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
               _buildNavItem(icon: Icons.favorite_border, activeIcon: Icons.favorite, label: 'Избранное', index: 1),
               _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail, label: 'Заявки', index: 2),
-              _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Профиль', index: 3),
+              _buildNavItem(icon: Icons.manage_search_rounded, activeIcon: Icons.manage_search, label: 'Проекты', index: 3),
+              _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Профиль', index: 4),
             ],
           ),
         ),

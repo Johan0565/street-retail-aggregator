@@ -46,4 +46,23 @@ class CategoryService {
       BusinessCategory(id: 7, name: 'Спортзал / Фитнес'),
     ];
   }
-}
+
+  /// Плоский список категорий в виде Map — удобен для Dropdown в форме профиля поиска.
+  Future<List<Map<String, dynamic>>> getAllCategories() async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.get(
+        '/categories/flat',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data;
+        return data.map((e) => {'id': e['id'], 'name': e['name']}).toList();
+      }
+    } catch (_) {}
+    // Fallback: преобразуем из статического списка
+    return _getFallbackCategories()
+        .map((c) => {'id': c.id, 'name': c.name})
+        .toList();
+  }
+}
