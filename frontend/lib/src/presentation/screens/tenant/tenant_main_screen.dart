@@ -40,11 +40,10 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
         children: _screens,
       ),
 
-      // Плавающая панель навигации
       bottomNavigationBar: SafeArea(
         child: Container(
-          margin: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          margin: const EdgeInsets.only(left: 12, right: 12, bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.black87, // Темный стильный фон панели
             borderRadius: BorderRadius.circular(32),
@@ -57,7 +56,7 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
             ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
               _buildNavItem(icon: Icons.favorite_border, activeIcon: Icons.favorite, label: 'Избранное', index: 1),
@@ -89,7 +88,7 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? _primaryOrange.withOpacity(0.2) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
@@ -99,17 +98,17 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
             Icon(
               isSelected ? activeIcon : icon,
               color: isSelected ? _primaryOrange : Colors.white70,
-              size: 26,
+              size: 24,
             ),
             // Анимация появления текста при выделении
             if (isSelected) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
                   color: _primaryOrange,
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
               ),
             ]
