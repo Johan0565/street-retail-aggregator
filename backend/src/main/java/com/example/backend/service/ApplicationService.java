@@ -22,6 +22,7 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final PropertyRepository propertyRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public ApplicationResponseDto createApplication(Long tenantId, Long propertyId, String coverLetter) {
@@ -42,7 +43,9 @@ public class ApplicationService {
                 .coverLetter(coverLetter)
                 .build();
 
-        return mapToDto(applicationRepository.save(application));
+        Application saved = applicationRepository.save(application);
+        notificationService.sendPushNotification(property.getLandlord().getId(), "Новая заявка", "Поступила новая заявка на помещение: " + property.getTitle());
+        return mapToDto(saved);
     }
 
     @Transactional
@@ -64,7 +67,9 @@ public class ApplicationService {
             propertyRepository.save(property);
         }
 
-        return mapToDto(applicationRepository.save(application));
+        Application saved = applicationRepository.save(application);
+        notificationService.sendPushNotification(application.getTenant().getId(), "Статус заявки обновлен", "Ваша заявка перешла в статус: " + newStatus);
+        return mapToDto(saved);
     }
 
     @Transactional(readOnly = true)
@@ -137,7 +142,9 @@ public class ApplicationService {
             propertyRepository.save(property);
         }
 
-        return mapToDto(applicationRepository.save(application));
+        Application saved = applicationRepository.save(application);
+        notificationService.sendPushNotification(application.getTenant().getId(), "Статус заявки обновлен", "Ваша заявка перешла в статус: " + newStatus);
+        return mapToDto(saved);
     }
     // Вспомогательный метод маппинга Entity -> DTO
     private ApplicationResponseDto mapToDto(Application app) {

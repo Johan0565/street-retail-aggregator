@@ -25,6 +25,7 @@ public class ChatService {
     private final ChatMessageRepository chatMessageRepository;
     private final ApplicationRepository applicationRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public ChatRoomDto getOrCreateChatRoom(Long applicationId) {
@@ -74,6 +75,12 @@ public class ChatService {
                 .build();
 
         ChatMessage savedMessage = chatMessageRepository.save(message);
+        
+        Long recipientId = chatRoom.getLandlord().getId().equals(senderId) 
+                ? chatRoom.getTenant().getId() 
+                : chatRoom.getLandlord().getId();
+        notificationService.sendPushNotification(recipientId, "Новое сообщение", "От " + sender.getEmail() + ": " + content);
+
         return mapToChatMessageDto(savedMessage);
     }
 

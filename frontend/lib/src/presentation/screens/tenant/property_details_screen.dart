@@ -3,6 +3,8 @@ import '../../../domain/property.dart';
 import '../../../domain/search_profile.dart';
 import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
+import '../../../services/analytics_service.dart';
+import '../../../services/infrastructure_service.dart';
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
@@ -26,15 +28,21 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   bool _isFavorite = false;
   bool _isLoadingFavorite = false;
   bool _isCheckingInitialState = true;
+  Future<List<PoiDto>>? _poiFuture;
 
   @override
   void initState() {
     super.initState();
     if (!widget.isLandlordMode) {
       _checkIfFavorite();
+      AnalyticsService().logPropertyView(widget.property.id);
     } else {
       _isCheckingInitialState = false;
     }
+    _poiFuture = InfrastructureService().getInfrastructureNearby(
+      widget.property.latitude,
+      widget.property.longitude,
+    );
   }
 
   Future<void> _checkIfFavorite() async {
@@ -333,6 +341,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     title: 'Описание',
                     child: Text(widget.property.description, style: const TextStyle(fontSize: 15, height: 1.5, color: Colors.black87)),
                   ),
+                  const SizedBox(height: 16),
+                  
+                  // 6. ИНФРАСТРУКТУРА
+                  _buildSectionCard(
+                    title: 'Что рядом',
+                    child: _buildInfrastructureSection(),
+                  ),
                 ],
               ),
             ),
@@ -400,6 +415,56 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         ],
       ),
+    );
+  }
+
+  Widget _buildInfrastructureSection() {
+    return FutureBuilder<List<PoiDto>>(
+      future: _poiFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+        }
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return const Text('Данные об инфраструктуре недоступны', style: TextStyle(color: Colors.grey));
+        }
+
+        final pois = snapshot.data!;
+        
+        return Column(
+          children: pois.take(5).map((poi) {
+            IconData icon = Icons.place;
+            Color iconColor = Colors.grey;
+            if (poi.category == 'metro') { icon = Icons.subway; iconColor = Colors.red; }
+            else if (poi.category == 'cafe') { icon = Icons.local_cafe; iconColor = Colors.brown; }
+            else if (poi.category == 'university') { icon = Icons.school; iconColor = Colors.blue; }
+            
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: iconColor.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: iconColor, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(poi.name, style: const TextStyle(fontSize: 15)),
+                  ),
+                  Text(
+                    '${poi.distanceMeters.toInt()} м',
+                    style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

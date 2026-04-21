@@ -4,8 +4,12 @@ import 'package:frontend/src/presentation/screens/landlord/LandlordMainScreen.da
 import 'package:frontend/src/presentation/screens/tenant/tenant_main_screen.dart';
 import 'package:frontend/src/services/auth_service.dart';
 
+import 'package:frontend/src/services/notification_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().initialize();
+  NotificationService().handleIncomingMessages();
   runApp(const MyApp());
 }
 
