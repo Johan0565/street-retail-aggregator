@@ -188,6 +188,21 @@ public class PropertyService {
     }
 
     /**
+     * Рассчитать скоринг конкретного помещения для арендатора с использованием
+     * реальных данных 2GIS. Возвращает null, если нет активного профиля поиска.
+     */
+    @Transactional(readOnly = true)
+    public ScoredPropertyDto scorePropertyForTenant(Long tenantId, Long propertyId) {
+        var activeProfiles = searchProfileRepository.findByTenantIdAndIsActiveTrue(tenantId);
+        if (activeProfiles.isEmpty()) return null;
+
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+
+        return propertyScoringService.scorePropertyWithGis(activeProfiles.get(0), property);
+    }
+
+    /**
      * Получить все опубликованные помещения (общая лента)
      */
     @Transactional(readOnly = true)

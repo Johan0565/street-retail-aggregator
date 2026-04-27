@@ -5,6 +5,7 @@ import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
 import '../../../services/analytics_service.dart';
 import '../../../services/infrastructure_service.dart';
+import '../../../services/property_service.dart';
 
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
@@ -30,12 +31,20 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   bool _isCheckingInitialState = true;
   Future<List<PoiDto>>? _poiFuture;
 
+  // Скоринг, подгружаемый с бэкенда (когда scoredProperty не передан извне)
+  ScoredProperty? _loadedScore;
+  bool _isLoadingScore = false;
+
   @override
   void initState() {
     super.initState();
     if (!widget.isLandlordMode) {
       _checkIfFavorite();
       AnalyticsService().logPropertyView(widget.property.id);
+      // Если скор не передан из списка — загружаем с бэкенда (2GIS анализ)
+      if (widget.scoredProperty == null) {
+        _loadScore();
+      }
     } else {
       _isCheckingInitialState = false;
     }
@@ -43,6 +52,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       widget.property.latitude,
       widget.property.longitude,
     );
+  }
+
+  Future<void> _loadScore() async {
+    setState(() => _isLoadingScore = true);
+    final score = await PropertyService().scoreProperty(widget.property.id);
+    if (!mounted) return;
+    setState(() {
+      _loadedScore = score;
+      _isLoadingScore = false;
+    });
   }
 
   Future<void> _checkIfFavorite() async {
@@ -111,6 +130,31 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           _scoreBar('Технический', scored.technicalScore, 40),
           _scoreBar('Локация', scored.locationScore, 25),
           _scoreBar('Конкуренты', scored.competitorScore, 15),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoringLoadingCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Анализируем конкурентов поблизости...',
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+          ),
         ],
       ),
     );
@@ -303,12 +347,14 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                       Expanded(child: Text(widget.property.address, style: const TextStyle(color: Colors.black87, fontSize: 15))),
                     ],
                   ),
-                  // Блок скоринга (если есть)
-                  if (widget.scoredProperty != null) ...
-                    [
-                      const SizedBox(height: 16),
-                      _buildScoringCard(widget.scoredProperty!),
-                    ],
+                  // Блок скоринга
+                  if (_isLoadingScore) ...[
+                    const SizedBox(height: 16),
+                    _buildScoringLoadingCard(),
+                  ] else if ((widget.scoredProperty ?? _loadedScore) != null) ...[
+                    const SizedBox(height: 16),
+                    _buildScoringCard((widget.scoredProperty ?? _loadedScore)!),
+                  ],
                   const SizedBox(height: 24),
 
                   // 2. ГЛАВНЫЕ ХАРАКТЕРИСТИКИ (Грид)

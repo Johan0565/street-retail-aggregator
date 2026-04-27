@@ -4,13 +4,14 @@ import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.SearchProfile;
+import com.example.backend.repository.BusinessCategoryRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -26,7 +27,11 @@ import java.util.stream.Collectors;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class PropertyScoringService {
+
+    private final GisSearchService gisSearchService;
+    private final BusinessCategoryRepository businessCategoryRepository;
 
     // --- Веса компонентов (в сумме = 100) ---
     private static final int MAX_FINANCIAL_SCORE = 20;
@@ -294,5 +299,130 @@ public class PropertyScoringService {
         if (score >= 75) return "green";
         if (score >= 50) return "yellow";
         return "red";
+    }
+
+    // =========================================================================
+    //  СКОРИНГ С РЕАЛЬНЫМИ ДАННЫМИ 2GIS (для карточки объекта)
+    // =========================================================================
+
+    /**
+     * Рассчитать скоринг для одного помещения с запросом реальных данных о
+     * конкурентах через 2GIS Places API. Использует кэш результатов 2GIS.
+     */
+    public ScoredPropertyDto scorePropertyWithGis(SearchProfile profile, Property property) {
+        List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
+
+        int financialScore  = calculateFinancialScore(profile, property);
+        int technicalScore  = calculateTechnicalScore(profile, property);
+        int locationScore   = calculateLocationScore(profile, property);
+        int competitorScore = calculateCompetitorScoreWithGis(profile, property, allCategories);
+
+        int total = financialScore + technicalScore + locationScore + competitorScore;
+
+        log.debug("GIS-scoring property [{}]: total={}, financial={}, technical={}, location={}, competitor={}",
+                property.getId(), total, financialScore, technicalScore, locationScore, competitorScore);
+
+        return ScoredPropertyDto.builder()
+                .property(property)
+                .totalScore(total)
+                .financialScore(financialScore)
+                .technicalScore(technicalScore)
+                .locationScore(locationScore)
+                .competitorScore(competitorScore)
+                .matchLabel(resolveMatchLabel(total))
+                .matchColor(resolveMatchColor(total))
+                .build();
+    }
+
+    /**
+     * Компонент конкурентов на основе реальных данных 2GIS.
+     *
+     * Шкала:
+     *   0 прямых конкурентов, 0 косвенных → 15 баллов
+     *   0 прямых, есть косвенные          → 8–12 баллов
+     *   1 прямой конкурент                → 6 баллов
+     *   2 прямых конкурента               → 3 балла
+     *   3+ прямых конкурентов             → 0 баллов
+     */
+    private int calculateCompetitorScoreWithGis(SearchProfile profile, Property property,
+                                                List<BusinessCategory> allCategories) {
+        if (profile.getBusinessCategory() == null
+                || property.getLatitude() == null
+                || property.getLongitude() == null) {
+            return MAX_COMPETITOR_SCORE;
+        }
+
+        int radius = profile.getSearchRadiusMeters() != null
+                ? Math.min(profile.getSearchRadiusMeters(), 5000)
+                : 1000;
+
+        List<String> nearbyRubrics = gisSearchService.getNearbyRubricNames(
+                property.getLatitude().doubleValue(),
+                property.getLongitude().doubleValue(),
+                radius);
+
+        if (nearbyRubrics.isEmpty()) {
+            return MAX_COMPETITOR_SCORE;
+        }
+
+        BusinessCategory target = profile.getBusinessCategory();
+        long direct = 0;
+        long indirect = 0;
+
+        for (String rubric : nearbyRubrics) {
+            BusinessCategory matched = matchRubricToCategory(rubric, allCategories);
+            if (matched == null) continue;
+
+            if (matched.getId().equals(target.getId())) {
+                direct++;
+            } else if (matched.getParentCategory() != null
+                    && target.getParentCategory() != null
+                    && matched.getParentCategory().getId().equals(target.getParentCategory().getId())) {
+                indirect++;
+            }
+        }
+
+        log.debug("Конкуренты вблизи property [{}]: прямых={}, косвенных={}", property.getId(), direct, indirect);
+
+        if (direct >= 3) return 0;
+        if (direct == 2) return 3;
+        if (direct == 1) return 6;
+        if (indirect >= 3) return 8;
+        if (indirect >= 1) return 12;
+        return MAX_COMPETITOR_SCORE;
+    }
+
+    /**
+     * Сопоставляет название рубрики 2GIS с нашей категорией бизнеса.
+     * Использует word-boundary матч для однословных ключевых слов и
+     * substring-матч для многословных.
+     */
+    private BusinessCategory matchRubricToCategory(String rubricName, List<BusinessCategory> categories) {
+        String lowerRubric = rubricName.toLowerCase();
+        // Набор слов из названия рубрики (без знаков пунктуации)
+        Set<String> rubricWords = new HashSet<>(
+                Arrays.asList(lowerRubric.replaceAll("[^а-яёa-z0-9\\s]", " ").trim().split("\\s+"))
+        );
+
+        for (BusinessCategory cat : categories) {
+            if (cat.getTwoGisKeywords() == null || cat.getTwoGisKeywords().isBlank()) continue;
+
+            for (String kw : cat.getTwoGisKeywords().toLowerCase().split(",")) {
+                kw = kw.trim();
+                if (kw.isEmpty()) continue;
+
+                boolean matches;
+                if (kw.contains(" ")) {
+                    // Многословное ключевое слово: проверяем вхождение подстроки
+                    matches = lowerRubric.contains(kw);
+                } else {
+                    // Однословное: точное совпадение слова (предотвращает "бар" → "барбершоп")
+                    matches = rubricWords.contains(kw);
+                }
+
+                if (matches) return cat;
+            }
+        }
+        return null;
     }
 }

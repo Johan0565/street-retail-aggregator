@@ -1,6 +1,7 @@
 package com.example.backend.controller;
 
 import com.example.backend.dto.CreatePropertyRequest;
+import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.User;
 import com.example.backend.service.PropertyService;
@@ -24,6 +25,23 @@ public class PropertyController {
     @GetMapping("/{id}")
     public ResponseEntity<Property> getPropertyById(@PathVariable Long id) {
         return ResponseEntity.ok(propertyService.getPropertyById(id));
+    }
+
+    /**
+     * Возвращает детальный скоринг помещения с реальными данными о конкурентах
+     * из 2GIS для активного проекта поиска арендатора.
+     * 204 No Content — если у арендатора нет активного проекта поиска.
+     */
+    @GetMapping("/{id}/score")
+    @PreAuthorize("hasRole('TENANT')")
+    public ResponseEntity<ScoredPropertyDto> getPropertyScore(
+            @PathVariable Long id, Principal principal) {
+        Long tenantId = extractUserIdFromPrincipal(principal);
+        ScoredPropertyDto score = propertyService.scorePropertyForTenant(tenantId, id);
+        if (score == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(score);
     }
 
     @GetMapping("/recommended")

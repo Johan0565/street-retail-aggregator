@@ -22,4 +22,9 @@ public class BusinessCategory {
 
     @OneToMany(mappedBy = "parentCategory")
     private List<BusinessCategory> subCategories;
+
+    // Ключевые слова для сопоставления с рубриками 2GIS (через запятую, строчные)
+    // Пример: "кофейня,кофе,coffee"
+    @Column(name = "two_gis_keywords", columnDefinition = "TEXT")
+    private String twoGisKeywords;
 }

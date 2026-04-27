@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../domain/property.dart';
+import '../domain/search_profile.dart';
 
 
 
@@ -171,6 +172,25 @@ class PropertyService {
       return [];
     }
   }
+  /// Запрашивает скоринг конкретного помещения относительно активного проекта
+  /// поиска арендатора. Использует реальные данные 2GIS о конкурентах.
+  /// Возвращает null, если нет активного проекта или произошла ошибка.
+  Future<ScoredProperty?> scoreProperty(int propertyId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.get(
+        '/properties/$propertyId/score',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return ScoredProperty.fromJson(response.data as Map<String, dynamic>);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<List<Property>> getAllProperties() async {
     try {
 
