@@ -1,5 +1,7 @@
 package com.example.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import java.util.List;
@@ -18,8 +20,10 @@ public class BusinessCategory {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
+    @JsonIgnoreProperties({"parentCategory", "subCategories", "twoGisKeywords"})
     private BusinessCategory parentCategory;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "parentCategory")
     private List<BusinessCategory> subCategories;
 

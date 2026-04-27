@@ -11,7 +11,7 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final AnalyticsService _analyticsService = AnalyticsService();
-  late Future<AnalyticsDto> _analyticsFuture;
+  late Future<AnalyticsDto?> _analyticsFuture;
 
   @override
   void initState() {
@@ -29,14 +29,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         foregroundColor: Colors.black,
         elevation: 0,
       ),
-      body: FutureBuilder<AnalyticsDto>(
+      body: FutureBuilder<AnalyticsDto?>(
         future: _analyticsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: Color(0xFFFF8C00)));
           }
-          if (snapshot.hasError) {
-            return Center(child: Text('Ошибка загрузки аналитики: ${snapshot.error}'));
+          if (snapshot.hasError || snapshot.data == null) {
+            return const Center(child: Text('Не удалось загрузить аналитику', style: TextStyle(color: Colors.grey)));
           }
 
           final data = snapshot.data!;
