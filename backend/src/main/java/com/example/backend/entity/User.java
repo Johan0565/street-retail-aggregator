@@ -73,7 +73,7 @@ public class User implements UserDetails {
             joinColumns = @JoinColumn(name = "tenant_id"),
             inverseJoinColumns = @JoinColumn(name = "property_id")
     )
-    private Set<Property> favoriteProperties;
+    private Set<Property> favoriteProperties = new java.util.HashSet<>();
     @Override
     @JsonIgnore
     public Collection<? extends GrantedAuthority> getAuthorities() {

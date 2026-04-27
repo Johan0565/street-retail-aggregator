@@ -23,10 +23,4 @@ public interface PropertyRepository extends JpaRepository<Property, Long> {
     List<Property> findRecommendedPropertiesWithoutCompetitors(@Param("category") BusinessCategory category);
 
     List<Property> findByStatusAndHasSeparateEntranceTrueAndHasVentilationTrue(PropertyStatus status);
-
-    @Query("SELECT COUNT(u) FROM User u JOIN u.favoriteProperties p WHERE p.landlord.id = :landlordId")
-    long countFavoritesByLandlordId(@Param("landlordId") Long landlordId);
-
-    @Query("SELECT COUNT(u) FROM User u JOIN u.favoriteProperties p WHERE p.id = :propertyId")
-    long countFavoritesByPropertyId(@Param("propertyId") Long propertyId);
 }

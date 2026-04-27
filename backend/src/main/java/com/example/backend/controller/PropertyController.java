@@ -84,7 +84,28 @@ public class PropertyController {
         propertyService.deleteProperty(landlordId, id);
         return ResponseEntity.noContent().build();
     }
-    // ... существующий код ...
+    @PostMapping("/{propertyId}/favorite")
+    @PreAuthorize("hasRole('TENANT')")
+    public ResponseEntity<Void> addFavorite(@PathVariable Long propertyId, Principal principal) {
+        Long tenantId = extractUserIdFromPrincipal(principal);
+        propertyService.addFavorite(tenantId, propertyId);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{propertyId}/favorite")
+    @PreAuthorize("hasRole('TENANT')")
+    public ResponseEntity<Void> removeFavorite(@PathVariable Long propertyId, Principal principal) {
+        Long tenantId = extractUserIdFromPrincipal(principal);
+        propertyService.removeFavorite(tenantId, propertyId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/favorites")
+    @PreAuthorize("hasRole('TENANT')")
+    public ResponseEntity<List<Property>> getMyFavorites(Principal principal) {
+        Long tenantId = extractUserIdFromPrincipal(principal);
+        return ResponseEntity.ok(propertyService.getFavorites(tenantId));
+    }
 
     @GetMapping
     public ResponseEntity<List<Property>> getAllProperties() {

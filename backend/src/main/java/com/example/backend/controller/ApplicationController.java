@@ -63,14 +63,10 @@ public class ApplicationController {
         ApplicationResponseDto updatedApplication = applicationService.updateApplicationStatus(
                 landlordId,
                 applicationId,
-                request.getStatus()
-        );
-        return ResponseEntity.ok(applicationService.updateApplicationStatus(
-                landlordId,
-                applicationId,
                 request.getStatus(),
                 request.getRejectionReason()
-        ));
+        );
+        return ResponseEntity.ok(updatedApplication);
     }
 
     private Long extractUserIdFromPrincipal(Principal principal) {
@@ -86,12 +82,12 @@ public class ApplicationController {
      * Защищено: только Арендатор.
      */
     @DeleteMapping("/{applicationId}")
-    @PreAuthorize("hasRole('TENANT')")
+    @PreAuthorize("hasAnyRole('TENANT', 'LANDLORD')")
     public ResponseEntity<Void> deleteApplication(
             @PathVariable Long applicationId,
             Principal principal) {
-        Long tenantId = extractUserIdFromPrincipal(principal);
-        applicationService.deleteApplication(tenantId, applicationId);
+        Long currentUserId = extractUserIdFromPrincipal(principal);
+        applicationService.deleteApplication(currentUserId, applicationId);
         return ResponseEntity.noContent().build();
     }
 

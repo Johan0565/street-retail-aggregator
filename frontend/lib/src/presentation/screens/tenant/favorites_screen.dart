@@ -110,42 +110,60 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         ),
                         Padding(
                           padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    '${property.pricePerMonth} ₽ / мес',
-                                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _primaryOrange),
-                                  ),
-                                  Icon(Icons.favorite, color: _primaryOrange, size: 24),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                property.title,
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on, size: 14, color: Colors.grey),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      property.address,
-                                      style: const TextStyle(color: Colors.grey, fontSize: 14),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                          child: Opacity(
+                            opacity: property.status == 'ARCHIVED' ? 0.6 : 1.0,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${property.pricePerMonth} ₽ / мес',
+                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _primaryOrange),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                    if (property.status == 'ARCHIVED')
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red[100],
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Text(
+                                          'Снято',
+                                          style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    const SizedBox(width: 8),
+                                    Icon(Icons.favorite, color: _primaryOrange, size: 24),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  property.title,
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.location_on, size: 14, color: Colors.grey),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        property.address,
+                                        style: const TextStyle(color: Colors.grey, fontSize: 14),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],

@@ -42,7 +42,6 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     _poiFuture = InfrastructureService().getInfrastructureNearby(
       widget.property.latitude,
       widget.property.longitude,
-      profileId: widget.scoredProperty?.profileId,
     );
   }
 
@@ -272,6 +271,28 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           // 1. ЗАГОЛОВОК И ЦЕНА
                   Text('${widget.property.pricePerMonth} ₽ / мес', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: primaryOrange)),
                   const SizedBox(height: 8),
+                  if (widget.property.status == 'ARCHIVED')
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red[200]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.red[700]),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Это помещение снято с публикации и недоступно для аренды.',
+                              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Text(widget.property.title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, height: 1.2)),
                   const SizedBox(height: 8),
                   Row(
@@ -364,9 +385,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]),
         child: ElevatedButton(
-          onPressed: () => _showApplicationSheet(context, widget.property),
-          style: ElevatedButton.styleFrom(backgroundColor: primaryOrange, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          child: const Text('Оставить заявку', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+          onPressed: widget.property.status == 'ARCHIVED' ? null : () => _showApplicationSheet(context, widget.property),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: widget.property.status == 'ARCHIVED' ? Colors.grey : primaryOrange,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: Text(
+            widget.property.status == 'ARCHIVED' ? 'Недоступно' : 'Оставить заявку',
+            style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
+          ),
         ),
       )
           : null,
@@ -433,34 +461,15 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         final pois = snapshot.data!;
         
         return Column(
-          children: pois.map((poi) {
+          children: pois.take(5).map((poi) {
             IconData icon = Icons.place;
             Color iconColor = Colors.grey;
+            if (poi.category == 'metro') { icon = Icons.subway; iconColor = Colors.red; }
+            else if (poi.category == 'cafe') { icon = Icons.local_cafe; iconColor = Colors.brown; }
+            else if (poi.category == 'university') { icon = Icons.school; iconColor = Colors.blue; }
             
-            if (poi.isCompetitor) {
-              icon = Icons.warning_amber_rounded; // Or Icons.storefront
-              iconColor = Colors.red;
-            } else if (poi.category == 'metro') {
-              icon = Icons.subway;
-              iconColor = Colors.red;
-            } else if (poi.category == 'cafe') {
-              icon = Icons.local_cafe;
-              iconColor = Colors.brown;
-            } else if (poi.category == 'university') {
-              icon = Icons.school;
-              iconColor = Colors.blue;
-            }
-            
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12.0),
-              padding: poi.isCompetitor ? const EdgeInsets.all(8) : null,
-              decoration: poi.isCompetitor 
-                ? BoxDecoration(
-                    color: Colors.red.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withOpacity(0.1)),
-                  )
-                : null,
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
               child: Row(
                 children: [
                   Container(
@@ -473,29 +482,11 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          poi.name, 
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: poi.isCompetitor ? FontWeight.bold : FontWeight.normal,
-                            color: poi.isCompetitor ? Colors.red[900] : Colors.black87,
-                          )
-                        ),
-                        if (poi.isCompetitor)
-                          const Text('Прямой конкурент', style: TextStyle(fontSize: 11, color: Colors.red)),
-                      ],
-                    ),
+                    child: Text(poi.name, style: const TextStyle(fontSize: 15)),
                   ),
                   Text(
                     '${poi.distanceMeters.toInt()} м',
-                    style: TextStyle(
-                      color: poi.isCompetitor ? Colors.red : Colors.grey,
-                      fontWeight: FontWeight.bold, 
-                      fontSize: 13
-                    ),
+                    style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ],
               ),

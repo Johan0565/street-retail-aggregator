@@ -4,7 +4,6 @@ import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.SearchProfile;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -27,10 +26,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class PropertyScoringService {
-
-    private final InfrastructureService infrastructureService;
 
     // --- Веса компонентов (в сумме = 100) ---
     private static final int MAX_FINANCIAL_SCORE = 20;
@@ -74,7 +70,6 @@ public class PropertyScoringService {
                 .competitorScore(competitorScore)
                 .matchLabel(matchLabel)
                 .matchColor(matchColor)
-                .profileId(profile.getId())
                 .build();
     }
 
@@ -205,32 +200,34 @@ public class PropertyScoringService {
     // =========================================================================
     private int calculateCompetitorScore(SearchProfile profile, Property property) {
         if (profile.getBusinessCategory() == null) {
-            return MAX_COMPETITOR_SCORE;
+            return MAX_COMPETITOR_SCORE; // Категория не задана — конкурентов нет
         }
 
-        // 1. Проверка по нашей базе (в здании)
         Set<BusinessCategory> existingNeighbors = property.getExistingNeighbors();
-        boolean hasDirectCompetitorInBuilding = existingNeighbors != null && existingNeighbors.stream()
-                .anyMatch(neighbor -> neighbor.getId().equals(profile.getBusinessCategory().getId()));
-
-        if (hasDirectCompetitorInBuilding) return 0;
-
-        // 2. Проверка по Overpass API (в радиусе 500 метров)
-        String osmTag = profile.getBusinessCategory().getOsmTag();
-        int competitorCountNearby = 0;
-        if (osmTag != null && property.getLatitude() != null && property.getLongitude() != null) {
-            competitorCountNearby = infrastructureService.countCompetitors(
-                    property.getLatitude().doubleValue(),
-                    property.getLongitude().doubleValue(),
-                    500,
-                    osmTag
-            );
+        if (existingNeighbors == null || existingNeighbors.isEmpty()) {
+            return MAX_COMPETITOR_SCORE; // В здании нет зарегистрированных соседей
         }
 
-        if (competitorCountNearby >= 3) return 5; // Много конкурентов рядом
-        if (competitorCountNearby >= 1) return 10; // Есть конкуренты рядом
-        
-        return MAX_COMPETITOR_SCORE; // Конкурентов нет
+        Long targetCategoryId = profile.getBusinessCategory().getId();
+
+        // Проверяем прямых конкурентов (та же категория)
+        boolean hasDirectCompetitor = existingNeighbors.stream()
+                .anyMatch(neighbor -> neighbor.getId().equals(targetCategoryId));
+
+        // Проверяем косвенных конкурентов (та же родительская категория)
+        boolean hasIndirectCompetitor = !hasDirectCompetitor && existingNeighbors.stream()
+                .anyMatch(neighbor -> neighbor.getParentCategory() != null
+                        && profile.getBusinessCategory().getParentCategory() != null
+                        && neighbor.getParentCategory().getId().equals(
+                                profile.getBusinessCategory().getParentCategory().getId()));
+
+        if (hasDirectCompetitor) {
+            return 0; // Прямой конкурент — максимальный штраф
+        } else if (hasIndirectCompetitor) {
+            return MAX_COMPETITOR_SCORE / 2; // Косвенный конкурент — половина штрафа
+        } else {
+            return MAX_COMPETITOR_SCORE; // Нет конкурентов — максимум
+        }
     }
 
     // =========================================================================

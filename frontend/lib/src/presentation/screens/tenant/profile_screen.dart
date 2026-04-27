@@ -77,6 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final nameController = TextEditingController(text: currentProfile.name);
     final phoneController = TextEditingController(text: currentProfile.phone);
 
+    int? selectedCategoryId = currentProfile.businessCategoryId;
     bool isSubmitting = false;
 
     showModalBottomSheet(
@@ -109,14 +110,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  const SizedBox(height: 16),
+                  // ПОКАЗЫВАЕМ НИШУ ТОЛЬКО АРЕНДАТОРУ
+                  if (_userRole == 'TENANT') ...[
+                    FutureBuilder<List<BusinessCategory>>(
+                      future: CategoryService().getCategories(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                        final categories = snapshot.data ?? [];
+                        if (selectedCategoryId != null && !categories.any((c) => c.id == selectedCategoryId)) selectedCategoryId = null;
+
+                        return DropdownButtonFormField<int>(
+                          value: selectedCategoryId,
+                          decoration: const InputDecoration(labelText: 'Целевая ниша бизнеса', prefixIcon: Icon(Icons.storefront), border: OutlineInputBorder()),
+                          items: categories.map((category) => DropdownMenuItem<int>(value: category.id, child: Text(category.name))).toList(),
+                          onChanged: (value) => setStateSheet(() => selectedCategoryId = value),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                  ],
 
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: isSubmitting ? null : () async {
                         setStateSheet(() => isSubmitting = true);
-                        final success = await _authService.updateProfile(nameController.text.trim(), phoneController.text.trim(), null);
+                        final success = await _authService.updateProfile(nameController.text.trim(), phoneController.text.trim(), selectedCategoryId);
                         setStateSheet(() => isSubmitting = false);
 
                         if (success) {
@@ -154,7 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.black));
 
-          final profile = snapshot.data ?? UserProfile(id: 0, name: 'Пользователь', phone: 'Не указан', inn: 'Не указан');
+          final profile = snapshot.data ?? UserProfile(id: 0, name: 'Пользователь', phone: 'Не указан', inn: 'Не указан', businessCategory: 'Не выбрана');
 
           return SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: 100),
@@ -205,6 +224,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: Column(
                       children: [
+                        // ПОКАЗЫВАЕМ НИШУ ТОЛЬКО АРЕНДАТОРУ
+                        if (_userRole == 'TENANT') ...[
+                          _buildDataRow(Icons.storefront_outlined, 'Ниша', profile.businessCategory),
+                          const Divider(height: 1, indent: 56),
+                        ],
                         _buildDataRow(Icons.phone_outlined, 'Телефон', profile.phone),
                         const Divider(height: 1, indent: 56),
                         _buildDataRow(Icons.numbers, 'ИНН', profile.inn),

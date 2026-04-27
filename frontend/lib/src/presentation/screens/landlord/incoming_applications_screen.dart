@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../domain/application_model.dart';
 import '../../../services/application_service.dart';
+import '../chat/chat_screen.dart';
 
 class IncomingApplicationsScreen extends StatefulWidget {
   const IncomingApplicationsScreen({super.key});
@@ -295,96 +296,150 @@ class _IncomingApplicationsScreenState extends State<IncomingApplicationsScreen>
                 final (statusText, statusColor) = _getStatusInfo(app.status);
                 final canRespond = app.status == 'PENDING' || app.status == 'REVIEWING';
 
-                return Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+                return Dismissible(
+                  key: Key('app_${app.id}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 32),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 32),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                            child: Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12)),
-                          ),
-                          // Красивое отображение даты
-                          Text(app.createdAt.split('T')[0] + ' ' + app.createdAt.split('T')[1].substring(0, 5), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  confirmDismiss: (direction) async {
+                    if (app.status == 'ACCEPTED') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Нельзя удалить принятую заявку'), backgroundColor: Colors.orange),
+                      );
+                      return false;
+                    }
+                    return await showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Удаление'),
+                        content: const Text('Вы уверены, что хотите удалить эту заявку из истории? Она также исчезнет у арендатора.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
+                          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Удалить', style: TextStyle(color: Colors.red))),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      Text('Объект: ${app.property.title}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text(app.property.address, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-
-                      const Divider(height: 32),
-
-                      Row(
-                        children: [
-                          CircleAvatar(radius: 20, backgroundColor: Colors.blue.withOpacity(0.1), child: const Icon(Icons.person, color: Colors.blue)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(app.tenantName ?? 'Имя не указано', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                Text(app.tenantPhone ?? 'Телефон не указан', style: const TextStyle(color: Colors.black87, fontSize: 14)),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[200]!)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    );
+                  },
+                  onDismissed: (direction) async {
+                    final success = await _applicationService.deleteApplication(app.id);
+                    if (success) {
+                      _loadApplications();
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Сопроводительное письмо:', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                            const SizedBox(height: 4),
-                            Text(app.coverLetter.isNotEmpty ? app.coverLetter : 'Без сопроводительного письма', style: const TextStyle(fontStyle: FontStyle.italic)),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                              child: Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                            // Красивое отображение даты
+                            Text(app.createdAt.split('T')[0] + ' ' + app.createdAt.split('T')[1].substring(0, 5), style: const TextStyle(color: Colors.grey, fontSize: 12)),
                           ],
                         ),
-                      ),
-
-                      if (canRespond) ...[
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
+                        Text('Объект: ${app.property.title}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(app.property.address, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+  
+                        const Divider(height: 32),
+  
                         Row(
                           children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => _showRejectionDialog(app.id),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  side: const BorderSide(color: Colors.red),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: const Text('Отклонить', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
+                            CircleAvatar(radius: 20, backgroundColor: Colors.blue.withOpacity(0.1), child: const Icon(Icons.person, color: Colors.blue)),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: ElevatedButton(
-                                onPressed: () => _changeStatus(app.id, 'ACCEPTED'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                child: const Text('Принять', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(app.tenantName ?? 'Имя не указано', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text(app.tenantPhone ?? 'Телефон не указан', style: const TextStyle(color: Colors.black87, fontSize: 14)),
+                                ],
                               ),
+                            ),
+                            // КНОПКА ЧАТА ДЛЯ ВЛАДЕЛЬЦА
+                            IconButton(
+                              icon: const Icon(Icons.chat_outlined, color: Color(0xFFFF8C00)),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ChatScreen(
+                                      applicationId: app.id,
+                                      applicationTitle: app.property.title,
+                                    ),
+                                  ),
+                                );
+                              },
+                              tooltip: 'Написать арендатору',
                             ),
                           ],
                         ),
+  
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[200]!)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Сопроводительное письмо:', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                              const SizedBox(height: 4),
+                              Text(app.coverLetter.isNotEmpty ? app.coverLetter : 'Без сопроводительного письма', style: const TextStyle(fontStyle: FontStyle.italic)),
+                            ],
+                          ),
+                        ),
+  
+                        if (canRespond) ...[
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => _showRejectionDialog(app.id),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    side: const BorderSide(color: Colors.red),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: const Text('Отклонить', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => _changeStatus(app.id, 'ACCEPTED'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: const Text('Принять', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 );
               },

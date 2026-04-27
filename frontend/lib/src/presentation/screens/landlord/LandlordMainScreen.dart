@@ -6,7 +6,6 @@ import 'my_properties_screen.dart';
 import 'add_property_screen.dart';
 import 'incoming_applications_screen.dart';
 import '../tenant/profile_screen.dart'; // Универсальный профиль
-import 'analytics_screen.dart';
 
 class LandlordMainScreen extends StatefulWidget {
   const LandlordMainScreen({super.key});
@@ -22,7 +21,6 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
   final List<Widget> _screens = [
     const MapScreen(isLandlordMode: true),
     const MyPropertiesScreen(),
-    const AnalyticsScreen(),
     const IncomingApplicationsScreen(),
     const ProfileScreen(),
   ];
@@ -70,7 +68,6 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
             children: [
               // --- ЛЕВАЯ ЖЕСТКАЯ ПОЛОВИНА ---
               Expanded(
-                flex: 2,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -81,17 +78,15 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
               ),
 
               // --- ЦЕНТРАЛЬНОЕ МЕСТО ПОД КНОПКУ (Зафиксировано) ---
-              const SizedBox(width: 48),
+              const SizedBox(width: 56),
 
               // --- ПРАВАЯ ЖЕСТКАЯ ПОЛОВИНА ---
               Expanded(
-                flex: 3,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildNavItem(icon: Icons.bar_chart_outlined, activeIcon: Icons.bar_chart_rounded, label: 'Аналитика', index: 2),
-                    _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail_rounded, label: 'Заявки', index: 3),
-                    _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профиль', index: 4),
+                    _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail_rounded, label: 'Заявки', index: 2),
+                    _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профиль', index: 3),
                   ],
                 ),
               ),
@@ -144,8 +139,7 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
               const SizedBox(width: 4),
               Text(
                 label,
-                style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 10),
-                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 12),
               ),
             ]
           ],

@@ -6699,30 +6699,41 @@ class _MapScreenState extends State<MapScreen> {
         properties = await _propertyService.getAllProperties();
       }
 
-      // Строим маркеры с цветом из скоринга
-      final List<PlacemarkMapObject> placemarks = [];
-      for (final property in properties) {
+      // Кэш для иконок маркеров (чтобы не перерисовывать одинаковые)
+      final Map<String, Uint8List> iconCache = {};
+      
+      // Параллельная подготовка всех маркеров
+      final List<Future<PlacemarkMapObject>> markerFutures = properties.map((property) async {
         final scored = newCache[property.id];
-        final markerColor = scored != null ? scored.flutterColor : Colors.black;
+        // Если нет скоринга, используем оранжевый вместо черного (черный плохо виден)
+        final markerColor = scored != null ? scored.flutterColor : _primaryOrange;
         final score = scored?.totalScore;
+        
+        final cacheKey = '${markerColor.value}_$score';
+        Uint8List? iconBytes = iconCache[cacheKey];
+        
+        if (iconBytes == null) {
+          iconBytes = await _buildMarkerIcon(markerColor, score);
+          iconCache[cacheKey] = iconBytes;
+        }
 
-        placemarks.add(PlacemarkMapObject(
+        return PlacemarkMapObject(
           mapId: MapObjectId('property_${property.id}'),
           point: Point(latitude: property.latitude, longitude: property.longitude),
           opacity: 1,
           icon: PlacemarkIcon.single(
             PlacemarkIconStyle(
-              image: BitmapDescriptor.fromBytes(
-                await _buildMarkerIcon(markerColor, score),
-              ),
+              image: BitmapDescriptor.fromBytes(iconBytes),
               scale: 1.0,
             ),
           ),
           onTap: (PlacemarkMapObject self, Point point) {
             _showPropertyDetails(property);
           },
-        ));
-      }
+        );
+      }).toList();
+
+      final List<PlacemarkMapObject> placemarks = await Future.wait(markerFutures);
 
       final clusterizedCollection = ClusterizedPlacemarkCollection(
         mapId: const MapObjectId('clusterized_collection'),

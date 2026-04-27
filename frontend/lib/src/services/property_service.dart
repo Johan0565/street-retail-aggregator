@@ -184,16 +184,10 @@ class PropertyService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
-        print('API вернул ${data.length} объектов'); // <-- ДОБАВЬ ЭТО
+        print('API вернул ${data.length} объектов');
         return data.map((json) => Property.fromJson(json)).toList();
       }
-      print('>>> ОТВЕТ СЕРВЕРА: ${response.statusCode}');
-      print('>>> ДАННЫЕ: ${response.data}'); // Смотрим, что пришло
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = response.data;
-        return data.map((json) => Property.fromJson(json)).toList();
-      }
+      print('>>> ОШИБКА ОТВЕТА СЕРВЕРА: ${response.statusCode} - ${response.data}');
       return [];
     } on DioException catch (e) {
       print('>>> СЕТЕВАЯ ОШИБКА DIO: ${e.response?.statusCode} - ${e.response?.data}');

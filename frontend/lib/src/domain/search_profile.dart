@@ -104,7 +104,6 @@ class ScoredProperty {
   final int competitorScore;  // 0-15
   final String matchLabel;
   final String matchColor;    // "green", "yellow", "red"
-  final int? profileId;
 
   const ScoredProperty({
     required this.property,
@@ -115,7 +114,6 @@ class ScoredProperty {
     required this.competitorScore,
     required this.matchLabel,
     required this.matchColor,
-    this.profileId,
   });
 
   factory ScoredProperty.fromJson(Map<String, dynamic> json) {
@@ -128,7 +126,6 @@ class ScoredProperty {
       competitorScore: (json['competitorScore'] as num?)?.toInt() ?? 0,
       matchLabel: json['matchLabel']?.toString() ?? '',
       matchColor: json['matchColor']?.toString() ?? 'red',
-      profileId: (json['profileId'] as num?)?.toInt(),
     );
   }
 

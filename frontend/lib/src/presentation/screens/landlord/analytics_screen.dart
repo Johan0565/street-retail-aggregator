@@ -19,13 +19,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     _analyticsFuture = _analyticsService.getMyAnalytics();
   }
 
-  Future<void> _refresh() async {
-    setState(() {
-      _analyticsFuture = _analyticsService.getMyAnalytics();
-    });
-    await _analyticsFuture;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -48,35 +41,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
           final data = snapshot.data!;
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            color: const Color(0xFFFF8C00),
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSummaryCards(data),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'Просмотры за последние 30 дней',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildChart(data),
-                  const SizedBox(height: 32),
-                  if (data.propertyStats.isNotEmpty) ...[
-                    const Text(
-                      'Статистика по объектам',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildPropertyStatsList(data.propertyStats),
-                    const SizedBox(height: 80),
-                  ]
-                ],
-              ),
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSummaryCards(data),
+                const SizedBox(height: 32),
+                const Text(
+                  'Просмотры за последние 30 дней',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                _buildChart(data),
+              ],
             ),
           );
         },
@@ -194,64 +172,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPropertyStatsList(List<PropertyStatDto> stats) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: stats.length,
-      itemBuilder: (context, index) {
-        final stat = stats[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                offset: const Offset(0, 4),
-                blurRadius: 10,
-              )
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                stat.title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildStatItem(Icons.visibility, stat.views.toString(), 'Просмотры'),
-                  _buildStatItem(Icons.assignment, stat.applications.toString(), 'Заявки'),
-                  _buildStatItem(Icons.favorite, stat.favorites.toString(), 'В избранном'),
-                ],
-              )
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStatItem(IconData icon, String value, String label) {
-    return Column(
-      children: [
-        Icon(icon, size: 20, color: Colors.grey[600]),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-      ],
     );
   }
 }

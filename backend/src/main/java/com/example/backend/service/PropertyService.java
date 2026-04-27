@@ -155,7 +155,37 @@ public class PropertyService {
         property.setStatus(PropertyStatus.ARCHIVED);
         propertyRepository.save(property);
     }
-    // ... существующий код ...
+    @Transactional
+    public void addFavorite(Long tenantId, Long propertyId) {
+        User user = userRepository.findById(tenantId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+
+        if (user.getFavoriteProperties() == null) {
+            user.setFavoriteProperties(new java.util.HashSet<>());
+        }
+        user.getFavoriteProperties().add(property);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void removeFavorite(Long tenantId, Long propertyId) {
+        User user = userRepository.findById(tenantId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+
+        user.getFavoriteProperties().remove(property);
+        userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Property> getFavorites(Long tenantId) {
+        return propertyRepository.findFavoritePropertiesByTenantId(tenantId);
+    }
 
     /**
      * Получить все опубликованные помещения (общая лента)

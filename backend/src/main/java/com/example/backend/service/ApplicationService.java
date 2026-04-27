@@ -49,7 +49,7 @@ public class ApplicationService {
     }
 
     @Transactional
-    public ApplicationResponseDto updateApplicationStatus(Long landlordId, Long applicationId, ApplicationStatus newStatus) {
+    public ApplicationResponseDto updateApplicationStatus(Long landlordId, Long applicationId, ApplicationStatus newStatus, String rejectionReason) {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
@@ -59,6 +59,11 @@ public class ApplicationService {
         }
 
         application.setStatus(newStatus);
+
+        // --- СОХРАНЯЕМ ПРИЧИНУ ОТКАЗА ---
+        if (newStatus == ApplicationStatus.REJECTED && rejectionReason != null && !rejectionReason.isEmpty()) {
+            application.setRejectionReason(rejectionReason);
+        }
 
         // Если заявка принята, можно сразу поменять статус помещения на RENTED
         if (newStatus == ApplicationStatus.ACCEPTED) {
@@ -87,15 +92,18 @@ public class ApplicationService {
     }
 
     @Transactional
-    public void deleteApplication(Long tenantId, Long applicationId) {
+    public void deleteApplication(Long currentUserId, Long applicationId) {
         Application application = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
 
-        if (!application.getTenant().getId().equals(tenantId)) {
-            throw new RuntimeException("Вы не можете удалить чужую заявку");
+        boolean isTenant = application.getTenant().getId().equals(currentUserId);
+        boolean isLandlord = application.getProperty().getLandlord().getId().equals(currentUserId);
+
+        if (!isTenant && !isLandlord) {
+            throw new RuntimeException("Вы не можете удалить эту заявку");
         }
 
-        // Если заявка уже принята, удалять нельзя
+        // Если заявка уже принята, удалять нельзя (чтобы не ломать логику аренды)
         if (application.getStatus() == ApplicationStatus.ACCEPTED) {
             throw new RuntimeException("Нельзя удалить уже принятую заявку");
         }
@@ -118,42 +126,24 @@ public class ApplicationService {
 
         return mapToDto(application);
     }
-    @Transactional
-    public ApplicationResponseDto updateApplicationStatus(Long landlordId, Long applicationId, ApplicationStatus newStatus, String rejectionReason) { // <-- Добавили String rejectionReason
-        Application application = applicationRepository.findById(applicationId)
-                .orElseThrow(() -> new RuntimeException("Заявка не найдена"));
-
-        // Важная проверка безопасности: принадлежит ли помещение этому арендодателю?
-        if (!application.getProperty().getLandlord().getId().equals(landlordId)) {
-            throw new RuntimeException("У вас нет прав на изменение этой заявки");
-        }
-
-        application.setStatus(newStatus);
-
-        // --- СОХРАНЯЕМ ПРИЧИНУ ОТКАЗА ---
-        if (newStatus == ApplicationStatus.REJECTED && rejectionReason != null) {
-            application.setRejectionReason(rejectionReason);
-        }
-
-        // Если заявка принята, можно сразу поменять статус помещения на RENTED
-        if (newStatus == ApplicationStatus.ACCEPTED) {
-            Property property = application.getProperty();
-            property.setStatus(PropertyStatus.RENTED);
-            propertyRepository.save(property);
-        }
-
-        Application saved = applicationRepository.save(application);
-        notificationService.sendPushNotification(application.getTenant().getId(), "Статус заявки обновлен", "Ваша заявка перешла в статус: " + newStatus);
-        return mapToDto(saved);
-    }
     // Вспомогательный метод маппинга Entity -> DTO
     private ApplicationResponseDto mapToDto(Application app) {
         String tenantName = "Не указано";
         String tenantPhone = "Не указано";
 
-        if (app.getTenant().getTenantProfile() != null) {
+        if (app.getTenant() != null && app.getTenant().getTenantProfile() != null) {
             tenantName = app.getTenant().getTenantProfile().getName();
             tenantPhone = app.getTenant().getTenantProfile().getPhone();
+        }
+
+        Long propertyId = 0L;
+        String propertyTitle = "Объект удален";
+        String propertyAddress = "Адрес неизвестен";
+
+        if (app.getProperty() != null) {
+            propertyId = app.getProperty().getId();
+            propertyTitle = app.getProperty().getTitle();
+            propertyAddress = app.getProperty().getAddress();
         }
 
         return ApplicationResponseDto.builder()
@@ -163,13 +153,13 @@ public class ApplicationService {
                 .createdAt(app.getCreatedAt())
                 .rejectionReason(app.getRejectionReason())
                 .property(ApplicationResponseDto.PropertyShortInfo.builder()
-                        .id(app.getProperty().getId())
-                        .title(app.getProperty().getTitle())
-                        .address(app.getProperty().getAddress())
+                        .id(propertyId)
+                        .title(propertyTitle)
+                        .address(propertyAddress)
                         .build())
                 .tenant(ApplicationResponseDto.TenantShortInfo.builder()
-                        .id(app.getTenant().getId())
-                        .email(app.getTenant().getEmail())
+                        .id(app.getTenant() != null ? app.getTenant().getId() : 0L)
+                        .email(app.getTenant() != null ? app.getTenant().getEmail() : "Не указано")
                         .name(tenantName)
                         .phone(tenantPhone)
                         .build())

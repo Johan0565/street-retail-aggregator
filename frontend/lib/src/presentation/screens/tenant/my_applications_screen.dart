@@ -250,133 +250,173 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                 final app = applications[index];
                 final (statusText, statusColor) = _getStatusInfo(app.status);
 
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey[200]!),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+                return Dismissible(
+                  key: Key('app_${app.id}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 32),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 32),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Шапка карточки: Статус и Дата
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              statusText,
-                              style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
-                            ),
-                          ),
-                          Text(
-                            app.createdAt.split('T')[0] + ' ' + app.createdAt.split('T')[1].substring(0, 5),
-                            style: const TextStyle(color: Colors.grey, fontSize: 12),
-                          ),
+                  confirmDismiss: (direction) async {
+                    if (app.status == 'ACCEPTED') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Нельзя удалить принятую заявку'), backgroundColor: Colors.orange),
+                      );
+                      return false;
+                    }
+                    return await showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Удаление'),
+                        content: const Text('Вы уверены, что хотите отозвать эту заявку? Она исчезнет из истории у вас и у владельца.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
+                          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Удалить', style: TextStyle(color: Colors.red))),
                         ],
                       ),
-                      const SizedBox(height: 12),
-
-                      // Информация о помещении
-                      Text(
-                        app.property.title,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        app.property.address,
-                        style: const TextStyle(color: Colors.grey, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${app.property.pricePerMonth} ₽ / мес',
-                        style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-
-                      const Divider(height: 24),
-
-                      // Сопроводительное письмо
-                      const Text('Ваше письмо:', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      const SizedBox(height: 4),
-                      Text(
-                        app.coverLetter.isNotEmpty ? app.coverLetter : 'Без письма',
-                        style: const TextStyle(fontSize: 14, color: Colors.black87),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-
-                      // Причина отказа (выводится только если REJECTED)
-                      if (app.status == 'REJECTED' && app.rejectionReason != null && app.rejectionReason!.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.red.withOpacity(0.2)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(Icons.info_outline, color: Colors.red, size: 16),
-                                  SizedBox(width: 6),
-                                  Text('Причина отказа:', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
-                                ],
+                    );
+                  },
+                  onDismissed: (direction) async {
+                    final success = await _applicationService.deleteApplication(app.id);
+                    if (success) {
+                      setState(() {
+                        _applicationsFuture = _applicationService.getMyApplications();
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey[200]!),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Шапка карточки: Статус и Дата
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              const SizedBox(height: 4),
-                              Text(app.rejectionReason!, style: const TextStyle(color: Colors.black87, fontSize: 14)),
-                            ],
+                              child: Text(
+                                statusText,
+                                style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                            Text(
+                              app.createdAt.split('T')[0] + ' ' + app.createdAt.split('T')[1].substring(0, 5),
+                              style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+  
+                        // Информация о помещении
+                        Text(
+                          app.property.title,
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          app.property.address,
+                          style: const TextStyle(color: Colors.grey, fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${app.property.pricePerMonth} ₽ / мес',
+                          style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+  
+                        const Divider(height: 24),
+  
+                        // Сопроводительное письмо
+                        const Text('Ваше письмо:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        const SizedBox(height: 4),
+                        Text(
+                          app.coverLetter.isNotEmpty ? app.coverLetter : 'Без письма',
+                          style: const TextStyle(fontSize: 14, color: Colors.black87),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+  
+                        // Причина отказа (выводится только если REJECTED)
+                        if (app.status == 'REJECTED' && app.rejectionReason != null && app.rejectionReason!.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.red.withOpacity(0.2)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Row(
+                                  children: [
+                                    Icon(Icons.info_outline, color: Colors.red, size: 16),
+                                    SizedBox(width: 6),
+                                    Text('Причина отказа:', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(app.rejectionReason!, style: const TextStyle(color: Colors.black87, fontSize: 14)),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ChatScreen(
+                                    applicationId: app.id,
+                                    applicationTitle: app.property.title,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.chat_bubble_outline, size: 20),
+                            label: const Text('Чат с владельцем'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _primaryOrange,
+                              side: BorderSide(color: _primaryOrange),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
                       ],
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ChatScreen(
-                                  applicationId: app.id,
-                                  applicationTitle: app.property.title,
-                                ),
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.chat_bubble_outline, size: 20),
-                          label: const Text('Чат с владельцем'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _primaryOrange,
-                            side: BorderSide(color: _primaryOrange),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 );
               },

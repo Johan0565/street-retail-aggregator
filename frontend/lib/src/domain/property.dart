@@ -7,6 +7,7 @@ class Property {
   final double longitude;
   final double areaSqm; // <-- НОВОЕ
   final double pricePerMonth;
+  final String? status; // <-- PUBLISHED, ARCHIVED, etc.
 
   // Базовые
   final String? propertyType;
@@ -39,6 +40,7 @@ class Property {
     required this.longitude,
     required this.areaSqm,
     required this.pricePerMonth,
+    this.status,
     this.propertyType,
     this.cadastralNumber,
     this.accessType,
@@ -66,6 +68,7 @@ class Property {
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       areaSqm: (json['areaSqm'] as num?)?.toDouble() ?? 0.0,
       pricePerMonth: (json['pricePerMonth'] as num?)?.toDouble() ?? 0.0,
+      status: json['status']?.toString(),
       propertyType: json['propertyType']?.toString(),
       dealType: json['dealType']?.toString(),
       powerKw: (json['powerKw'] as num?)?.toInt() ?? 0,

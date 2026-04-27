@@ -47,7 +47,7 @@ class ChatService {
     
     _stompClient = StompClient(
       config: StompConfig(
-        url: 'ws://10.0.2.2:8080/ws/websocket',
+        url: 'ws://10.0.2.2:8080/ws',
         onConnect: (StompFrame frame) {
           _stompClient?.subscribe(
             destination: '/topic/chat/$roomId',

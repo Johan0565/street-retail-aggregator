@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -58,22 +57,10 @@ public class AnalyticsService {
 
         List<Property> properties = propertyRepository.findByLandlordId(landlordId);
         long totalApplications = 0;
-        long totalFavorites = propertyRepository.countFavoritesByLandlordId(landlordId);
-        List<AnalyticsDto.PropertyStatDto> propertyStats = new ArrayList<>();
+        long totalFavorites = 0;
         
         for (Property p : properties) {
-            long pApps = applicationRepository.findByPropertyId(p.getId()).size();
-            totalApplications += pApps;
-            long pViews = recentViews.stream().filter(e -> e.getProperty().getId().equals(p.getId())).count();
-            long pFavs = propertyRepository.countFavoritesByPropertyId(p.getId());
-            
-            propertyStats.add(AnalyticsDto.PropertyStatDto.builder()
-                    .propertyId(p.getId())
-                    .title(p.getTitle())
-                    .views(pViews)
-                    .applications(pApps)
-                    .favorites(pFavs)
-                    .build());
+            totalApplications += applicationRepository.findByPropertyId(p.getId()).size();
         }
 
         return AnalyticsDto.builder()
@@ -81,7 +68,6 @@ public class AnalyticsService {
                 .totalApplications(totalApplications)
                 .totalFavorites(totalFavorites)
                 .viewsByDate(viewsByDate)
-                .propertyStats(propertyStats)
                 .build();
     }
 }

@@ -18,12 +18,12 @@ class FavoriteService {
   ));
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  // Добавление в избранное (УБРАЛИ /tenant)
+  // Добавление в избранное
   Future<bool> addToFavorites(int propertyId) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.post(
-        '/favorites/$propertyId', // <-- Исправлено
+        '/properties/$propertyId/favorite', // Используем путь из PropertyService
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       return response.statusCode == 200 || response.statusCode == 201;
@@ -33,12 +33,12 @@ class FavoriteService {
     }
   }
 
-  // Удаление из избранного (УБРАЛИ /tenant)
+  // Удаление из избранного
   Future<bool> removeFromFavorites(int propertyId) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.delete(
-        '/favorites/$propertyId', // <-- Исправлено
+        '/properties/$propertyId/favorite', // Используем DELETE для удаления
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       return response.statusCode == 200 || response.statusCode == 204;
@@ -48,12 +48,12 @@ class FavoriteService {
     }
   }
 
-  // Получение списка избранного для нового экрана
+  // Получение списка избранного
   Future<List<Property>> getMyFavorites() async {
     try {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.get(
-        '/favorites', // Вызывает твой @GetMapping в контроллере
+        '/properties/favorites', // Используем путь из PropertyService
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
 

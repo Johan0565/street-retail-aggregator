@@ -109,4 +109,17 @@ class ApplicationService {
     }
   }
 
+  Future<bool> deleteApplication(int applicationId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.delete(
+        '/applications/$applicationId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.statusCode == 204 || response.statusCode == 200;
+    } catch (e) {
+      print('Ошибка при удалении заявки: $e');
+      return false;
+    }
+  }
 }

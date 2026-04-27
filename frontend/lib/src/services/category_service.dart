@@ -44,13 +44,6 @@ class CategoryService {
       BusinessCategory(id: 5, name: 'Салон красоты / Барбершоп'),
       BusinessCategory(id: 6, name: 'Одежда и обувь'),
       BusinessCategory(id: 7, name: 'Спортзал / Фитнес'),
-      BusinessCategory(id: 8, name: 'Ресторан / Бар'),
-      BusinessCategory(id: 9, name: 'Магазин электроники'),
-      BusinessCategory(id: 10, name: 'Цветочный магазин'),
-      BusinessCategory(id: 11, name: 'Зоотовары'),
-      BusinessCategory(id: 12, name: 'Детские товары'),
-      BusinessCategory(id: 13, name: 'Медицинский центр / Стоматология'),
-      BusinessCategory(id: 14, name: 'Банк / Финансовые услуги'),
     ];
   }
 
