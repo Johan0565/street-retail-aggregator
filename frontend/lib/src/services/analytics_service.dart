@@ -1,17 +1,45 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+class PropertyStatDto {
+  final int propertyId;
+  final String title;
+  final int views;
+  final int applications;
+  final int favorites;
+
+  PropertyStatDto({
+    required this.propertyId,
+    required this.title,
+    required this.views,
+    required this.applications,
+    required this.favorites,
+  });
+
+  factory PropertyStatDto.fromJson(Map<String, dynamic> json) {
+    return PropertyStatDto(
+      propertyId: (json['propertyId'] as num?)?.toInt() ?? 0,
+      title: json['title'] as String? ?? '',
+      views: (json['views'] as num?)?.toInt() ?? 0,
+      applications: (json['applications'] as num?)?.toInt() ?? 0,
+      favorites: (json['favorites'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class AnalyticsDto {
   final int totalViewsLast30Days;
   final int totalApplications;
   final int totalFavorites;
   final Map<String, int> viewsByDate;
+  final List<PropertyStatDto> propertyStats;
 
   AnalyticsDto({
     required this.totalViewsLast30Days,
     required this.totalApplications,
     required this.totalFavorites,
     required this.viewsByDate,
+    required this.propertyStats,
   });
 
   factory AnalyticsDto.fromJson(Map<String, dynamic> json) {
@@ -22,6 +50,9 @@ class AnalyticsDto {
       viewsByDate: (json['viewsByDate'] as Map<String, dynamic>?)?.map(
         (key, value) => MapEntry(key, (value as num).toInt()),
       ) ?? {},
+      propertyStats: (json['propertyStats'] as List<dynamic>?)
+          ?.map((e) => PropertyStatDto.fromJson(e as Map<String, dynamic>))
+          .toList() ?? [],
     );
   }
 }

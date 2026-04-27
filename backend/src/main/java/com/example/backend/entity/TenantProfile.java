@@ -26,7 +26,4 @@ public class TenantProfile {
 
     private String phone;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "target_business_category_id")
-    private BusinessCategory targetBusinessCategory;
 }

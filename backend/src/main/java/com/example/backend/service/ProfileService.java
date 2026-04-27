@@ -36,12 +36,7 @@ public class ProfileService {
         profile.setInn(request.getInn());
         profile.setPhone(request.getPhone());
 
-        // Если пользователь передал ID категории бизнеса, находим ее и обновляем
-        if (request.getTargetBusinessCategoryId() != null) {
-            BusinessCategory category = businessCategoryRepository.findById(request.getTargetBusinessCategoryId())
-                    .orElseThrow(() -> new RuntimeException("Категория бизнеса не найдена"));
-            profile.setTargetBusinessCategory(category);
-        }
+
 
         return tenantProfileRepository.save(profile);
     }

@@ -19,7 +19,8 @@ public class InfrastructureController {
     public ResponseEntity<List<PoiDto>> getInfrastructure(
             @RequestParam double lat,
             @RequestParam double lon,
-            @RequestParam(defaultValue = "500") int radius) {
-        return ResponseEntity.ok(infrastructureService.getInfrastructureNearby(lat, lon, radius));
+            @RequestParam(defaultValue = "500") int radius,
+            @RequestParam(required = false) Long profileId) {
+        return ResponseEntity.ok(infrastructureService.getInfrastructureNearby(lat, lon, radius, profileId));
     }
 }

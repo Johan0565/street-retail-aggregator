@@ -46,8 +46,8 @@ class ChatService {
     final token = await _storage.read(key: 'jwt_token');
     
     _stompClient = StompClient(
-      config: StompConfig.SockJS(
-        url: 'http://10.0.2.2:8080/ws',
+      config: StompConfig(
+        url: 'ws://10.0.2.2:8080/ws/websocket',
         onConnect: (StompFrame frame) {
           _stompClient?.subscribe(
             destination: '/topic/chat/$roomId',

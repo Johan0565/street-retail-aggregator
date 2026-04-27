@@ -7,4 +7,5 @@ import java.util.List;
 @Repository
 public interface BusinessCategoryRepository extends JpaRepository<BusinessCategory, Long> {
     List<BusinessCategory> findByParentCategoryIsNull();
+    java.util.Optional<BusinessCategory> findByName(String name);
 }

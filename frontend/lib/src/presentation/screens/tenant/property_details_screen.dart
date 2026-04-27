@@ -42,6 +42,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     _poiFuture = InfrastructureService().getInfrastructureNearby(
       widget.property.latitude,
       widget.property.longitude,
+      profileId: widget.scoredProperty?.profileId,
     );
   }
 
@@ -432,15 +433,34 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         final pois = snapshot.data!;
         
         return Column(
-          children: pois.take(5).map((poi) {
+          children: pois.map((poi) {
             IconData icon = Icons.place;
             Color iconColor = Colors.grey;
-            if (poi.category == 'metro') { icon = Icons.subway; iconColor = Colors.red; }
-            else if (poi.category == 'cafe') { icon = Icons.local_cafe; iconColor = Colors.brown; }
-            else if (poi.category == 'university') { icon = Icons.school; iconColor = Colors.blue; }
             
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12.0),
+            if (poi.isCompetitor) {
+              icon = Icons.warning_amber_rounded; // Or Icons.storefront
+              iconColor = Colors.red;
+            } else if (poi.category == 'metro') {
+              icon = Icons.subway;
+              iconColor = Colors.red;
+            } else if (poi.category == 'cafe') {
+              icon = Icons.local_cafe;
+              iconColor = Colors.brown;
+            } else if (poi.category == 'university') {
+              icon = Icons.school;
+              iconColor = Colors.blue;
+            }
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12.0),
+              padding: poi.isCompetitor ? const EdgeInsets.all(8) : null,
+              decoration: poi.isCompetitor 
+                ? BoxDecoration(
+                    color: Colors.red.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withOpacity(0.1)),
+                  )
+                : null,
               child: Row(
                 children: [
                   Container(
@@ -453,11 +473,29 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(poi.name, style: const TextStyle(fontSize: 15)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          poi.name, 
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: poi.isCompetitor ? FontWeight.bold : FontWeight.normal,
+                            color: poi.isCompetitor ? Colors.red[900] : Colors.black87,
+                          )
+                        ),
+                        if (poi.isCompetitor)
+                          const Text('Прямой конкурент', style: TextStyle(fontSize: 11, color: Colors.red)),
+                      ],
+                    ),
                   ),
                   Text(
                     '${poi.distanceMeters.toInt()} м',
-                    style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(
+                      color: poi.isCompetitor ? Colors.red : Colors.grey,
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 13
+                    ),
                   ),
                 ],
               ),

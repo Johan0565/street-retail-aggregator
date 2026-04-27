@@ -24,4 +24,5 @@ public class ScoredPropertyDto {
 
     private String matchLabel;       // "🔥 Отличный мэтч!", "👍 Хороший вариант", "⚠️ Не подходит"
     private String matchColor;       // "green", "yellow", "red" — для UI
+    private Long profileId;          // ID проекта поиска
 }

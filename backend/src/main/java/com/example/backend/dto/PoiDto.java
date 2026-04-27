@@ -9,4 +9,5 @@ public class PoiDto {
     private String name;
     private String category;
     private double distanceMeters;
+    private boolean isCompetitor;
 }
