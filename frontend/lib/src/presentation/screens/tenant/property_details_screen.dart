@@ -378,9 +378,14 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     spacing: 8, runSpacing: 8,
                     children: [
                       _buildSpecChip(Icons.bolt, '${widget.property.powerKw} кВт'),
+                      if (widget.property.ceilingHeight != null)
+                        _buildSpecChip(Icons.height, '${widget.property.ceilingHeight} м потолки'),
                       if (widget.property.hasWater) _buildSpecChip(Icons.water_drop, 'Мокрая точка'),
                       if (widget.property.hasVentilation) _buildSpecChip(Icons.air, 'Вытяжка'),
                       if (widget.property.hasSeparateEntrance) _buildSpecChip(Icons.door_front_door, 'Отд. вход'),
+                      if (widget.property.hasWc) _buildSpecChip(Icons.wc, 'Санузел'),
+                      if (widget.property.hasParking) _buildSpecChip(Icons.local_parking, 'Парковка'),
+                      if (widget.property.hasLoadingZone) _buildSpecChip(Icons.local_shipping, 'Зона разгрузки'),
                       if (widget.property.isOccupied == true) _buildSpecChip(Icons.people, 'Сейчас сдано (ГАБ)'),
                     ],
                   ),

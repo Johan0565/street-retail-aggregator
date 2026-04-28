@@ -18,6 +18,10 @@ class Property {
   final bool hasWater;
   final bool hasVentilation;
   final bool hasSeparateEntrance;
+  final bool hasWc;
+  final bool hasParking;
+  final bool hasLoadingZone;
+  final double? ceilingHeight;
   final String? repairState;
   final String? layout;
 
@@ -52,6 +56,10 @@ class Property {
     required this.hasWater,
     required this.hasVentilation,
     required this.hasSeparateEntrance,
+    required this.hasWc,
+    required this.hasParking,
+    required this.hasLoadingZone,
+    this.ceilingHeight,
     this.repairState,
     this.layout,
     this.contactName,
@@ -75,6 +83,10 @@ class Property {
       hasWater: json['hasWater'] == true,
       hasVentilation: json['hasVentilation'] == true,
       hasSeparateEntrance: json['hasSeparateEntrance'] == true,
+      hasWc: json['hasWc'] == true,
+      hasParking: json['hasParking'] == true,
+      hasLoadingZone: json['hasLoadingZone'] == true,
+      ceilingHeight: (json['ceilingHeight'] as num?)?.toDouble(),
       repairState: json['repairState']?.toString(),
       layout: json['layout']?.toString(),
       contactName: json['contactName']?.toString(),

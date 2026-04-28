@@ -44,7 +44,7 @@ public class SearchProfile {
     @Column(name = "max_budget", precision = 12, scale = 2)
     private BigDecimal maxBudget;
 
-    // --- 2. Технические критерии (40% скоринга) ---
+    // --- 2. Технические критерии (20% скоринга) ---
     @Column(name = "min_power_kw")
     private Integer minPowerKw;
 
@@ -56,6 +56,18 @@ public class SearchProfile {
 
     @Column(name = "requires_separate_entrance")
     private Boolean requiresSeparateEntrance;
+
+    @Column(name = "requires_wc")
+    private Boolean requiresWc;
+
+    @Column(name = "requires_parking")
+    private Boolean requiresParking;
+
+    @Column(name = "requires_loading_zone")
+    private Boolean requiresLoadingZone;
+
+    @Column(name = "min_ceiling_height", precision = 4, scale = 2)
+    private BigDecimal minCeilingHeight;
 
     // --- 3. Локация и синергия (25% скоринга) ---
     @Column(name = "center_latitude", precision = 10, scale = 8)

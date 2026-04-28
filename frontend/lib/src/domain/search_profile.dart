@@ -22,6 +22,10 @@ class SearchProfile {
   final bool? requiresWater;
   final bool? requiresVentilation;
   final bool? requiresSeparateEntrance;
+  final bool? requiresWc;
+  final bool? requiresParking;
+  final bool? requiresLoadingZone;
+  final double? minCeilingHeight;
 
   // Локация
   final double? centerLatitude;
@@ -44,6 +48,10 @@ class SearchProfile {
     this.requiresWater,
     this.requiresVentilation,
     this.requiresSeparateEntrance,
+    this.requiresWc,
+    this.requiresParking,
+    this.requiresLoadingZone,
+    this.minCeilingHeight,
     this.centerLatitude,
     this.centerLongitude,
     this.searchRadiusMeters,
@@ -69,6 +77,10 @@ class SearchProfile {
       requiresWater: json['requiresWater'] as bool?,
       requiresVentilation: json['requiresVentilation'] as bool?,
       requiresSeparateEntrance: json['requiresSeparateEntrance'] as bool?,
+      requiresWc: json['requiresWc'] as bool?,
+      requiresParking: json['requiresParking'] as bool?,
+      requiresLoadingZone: json['requiresLoadingZone'] as bool?,
+      minCeilingHeight: (json['minCeilingHeight'] as num?)?.toDouble(),
       centerLatitude: (json['centerLatitude'] as num?)?.toDouble(),
       centerLongitude: (json['centerLongitude'] as num?)?.toDouble(),
       searchRadiusMeters: (json['searchRadiusMeters'] as num?)?.toInt(),
@@ -88,6 +100,10 @@ class SearchProfile {
         if (requiresWater != null) 'requiresWater': requiresWater,
         if (requiresVentilation != null) 'requiresVentilation': requiresVentilation,
         if (requiresSeparateEntrance != null) 'requiresSeparateEntrance': requiresSeparateEntrance,
+        if (requiresWc != null) 'requiresWc': requiresWc,
+        if (requiresParking != null) 'requiresParking': requiresParking,
+        if (requiresLoadingZone != null) 'requiresLoadingZone': requiresLoadingZone,
+        if (minCeilingHeight != null) 'minCeilingHeight': minCeilingHeight,
         if (centerLatitude != null) 'centerLatitude': centerLatitude,
         if (centerLongitude != null) 'centerLongitude': centerLongitude,
         if (searchRadiusMeters != null) 'searchRadiusMeters': searchRadiusMeters,

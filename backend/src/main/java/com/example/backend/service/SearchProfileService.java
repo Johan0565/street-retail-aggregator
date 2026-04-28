@@ -64,6 +64,10 @@ public class SearchProfileService {
         profile.setRequiresWater(request.getRequiresWater());
         profile.setRequiresVentilation(request.getRequiresVentilation());
         profile.setRequiresSeparateEntrance(request.getRequiresSeparateEntrance());
+        profile.setRequiresWc(request.getRequiresWc());
+        profile.setRequiresParking(request.getRequiresParking());
+        profile.setRequiresLoadingZone(request.getRequiresLoadingZone());
+        profile.setMinCeilingHeight(request.getMinCeilingHeight());
         profile.setCenterLatitude(request.getCenterLatitude());
         profile.setCenterLongitude(request.getCenterLongitude());
         profile.setSearchRadiusMeters(request.getSearchRadiusMeters());
@@ -135,6 +139,10 @@ public class SearchProfileService {
                 .requiresWater(request.getRequiresWater())
                 .requiresVentilation(request.getRequiresVentilation())
                 .requiresSeparateEntrance(request.getRequiresSeparateEntrance())
+                .requiresWc(request.getRequiresWc())
+                .requiresParking(request.getRequiresParking())
+                .requiresLoadingZone(request.getRequiresLoadingZone())
+                .minCeilingHeight(request.getMinCeilingHeight())
                 .centerLatitude(request.getCenterLatitude())
                 .centerLongitude(request.getCenterLongitude())
                 .searchRadiusMeters(request.getSearchRadiusMeters())

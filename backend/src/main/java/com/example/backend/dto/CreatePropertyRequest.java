@@ -49,6 +49,9 @@ public class CreatePropertyRequest {
     // 5. Инфраструктура
     private String parking;
     private String security;
+    private Boolean hasWc;
+    private Boolean hasParking;
+    private Boolean hasLoadingZone;
 
     // 6. Контакты
     private String contactName;

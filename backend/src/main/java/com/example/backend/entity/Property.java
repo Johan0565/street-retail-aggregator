@@ -99,6 +99,15 @@ public class Property {
     private String parking;
     private String security;
 
+    @Column(name = "has_wc")
+    private Boolean hasWc;
+
+    @Column(name = "has_parking")
+    private Boolean hasParking;
+
+    @Column(name = "has_loading_zone")
+    private Boolean hasLoadingZone;
+
     // --- 6. Контакты ---
     private String contactName;
     private String contactPhone;

@@ -194,9 +194,14 @@ class _SearchProfilesScreenState extends State<SearchProfilesScreen> {
                       _buildTag(Icons.square_foot, '${profile.minArea!.toInt()}–${profile.maxArea!.toInt()} м²'),
                     if (profile.minPowerKw != null)
                       _buildTag(Icons.bolt, 'от ${profile.minPowerKw} кВт'),
+                    if (profile.minCeilingHeight != null)
+                      _buildTag(Icons.height, '≥ ${profile.minCeilingHeight} м'),
                     if (profile.requiresWater == true) _buildTag(Icons.water_drop, 'Вода'),
                     if (profile.requiresVentilation == true) _buildTag(Icons.air, 'Вытяжка'),
                     if (profile.requiresSeparateEntrance == true) _buildTag(Icons.door_front_door, 'Отд. вход'),
+                    if (profile.requiresWc == true) _buildTag(Icons.wc, 'Санузел'),
+                    if (profile.requiresParking == true) _buildTag(Icons.local_parking, 'Парковка'),
+                    if (profile.requiresLoadingZone == true) _buildTag(Icons.local_shipping, 'Разгрузка'),
                   ],
                 ),
               ],
@@ -257,6 +262,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
   final _minBudgetController = TextEditingController();
   final _maxBudgetController = TextEditingController();
   final _minPowerController = TextEditingController();
+  final _minCeilingController = TextEditingController();
 
   int _currentStep = 0;
   bool _isSaving = false;
@@ -265,6 +271,9 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
   bool _requiresWater = false;
   bool _requiresVentilation = false;
   bool _requiresSeparateEntrance = false;
+  bool _requiresWc = false;
+  bool _requiresParking = false;
+  bool _requiresLoadingZone = false;
 
   // Категория бизнеса
   List<Map<String, dynamic>> _categories = [];
@@ -290,9 +299,13 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
     if (p.minBudget != null) _minBudgetController.text = p.minBudget!.toInt().toString();
     if (p.maxBudget != null) _maxBudgetController.text = p.maxBudget!.toInt().toString();
     if (p.minPowerKw != null) _minPowerController.text = p.minPowerKw.toString();
+    if (p.minCeilingHeight != null) _minCeilingController.text = p.minCeilingHeight!.toString();
     _requiresWater = p.requiresWater ?? false;
     _requiresVentilation = p.requiresVentilation ?? false;
     _requiresSeparateEntrance = p.requiresSeparateEntrance ?? false;
+    _requiresWc = p.requiresWc ?? false;
+    _requiresParking = p.requiresParking ?? false;
+    _requiresLoadingZone = p.requiresLoadingZone ?? false;
   }
 
   Future<void> _loadCategories() async {
@@ -320,9 +333,13 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
       if (_minBudgetController.text.isNotEmpty) 'minBudget': double.tryParse(_minBudgetController.text),
       if (_maxBudgetController.text.isNotEmpty) 'maxBudget': double.tryParse(_maxBudgetController.text),
       if (_minPowerController.text.isNotEmpty) 'minPowerKw': int.tryParse(_minPowerController.text),
+      if (_minCeilingController.text.isNotEmpty) 'minCeilingHeight': double.tryParse(_minCeilingController.text),
       'requiresWater': _requiresWater,
       'requiresVentilation': _requiresVentilation,
       'requiresSeparateEntrance': _requiresSeparateEntrance,
+      'requiresWc': _requiresWc,
+      'requiresParking': _requiresParking,
+      'requiresLoadingZone': _requiresLoadingZone,
     };
 
     SearchProfile? result;
@@ -477,11 +494,18 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
             state: StepState.indexed,
             content: Column(
               children: [
-                _buildTextField(_minPowerController, 'Минимум кВт', '10', isNumber: true),
+                Row(children: [
+                  Expanded(child: _buildTextField(_minPowerController, 'Мин. мощность, кВт', '15', isNumber: true)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildTextField(_minCeilingController, 'Мин. высота потолков, м', '2.7', isNumber: true)),
+                ]),
                 const SizedBox(height: 8),
                 _buildSwitch('Нужна мокрая точка (вода)', _requiresWater, (v) => setState(() => _requiresWater = v)),
-                _buildSwitch('Нужна вытяжка', _requiresVentilation, (v) => setState(() => _requiresVentilation = v)),
+                _buildSwitch('Нужна вытяжка / вентиляция', _requiresVentilation, (v) => setState(() => _requiresVentilation = v)),
                 _buildSwitch('Нужен отдельный вход', _requiresSeparateEntrance, (v) => setState(() => _requiresSeparateEntrance = v)),
+                _buildSwitch('Нужен санузел в помещении', _requiresWc, (v) => setState(() => _requiresWc = v)),
+                _buildSwitch('Нужна парковка рядом', _requiresParking, (v) => setState(() => _requiresParking = v)),
+                _buildSwitch('Нужна зона разгрузки/погрузки', _requiresLoadingZone, (v) => setState(() => _requiresLoadingZone = v)),
               ],
             ),
           ),
@@ -533,6 +557,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
     _minBudgetController.dispose();
     _maxBudgetController.dispose();
     _minPowerController.dispose();
+    _minCeilingController.dispose();
     super.dispose();
   }
 }

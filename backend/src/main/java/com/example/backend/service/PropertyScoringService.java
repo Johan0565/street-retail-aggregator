@@ -4,6 +4,7 @@ import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.SearchProfile;
+import com.example.backend.entity.enums.RepairState;
 import com.example.backend.repository.BusinessCategoryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +18,8 @@ import java.util.stream.Collectors;
  * Скоринг помещений по трём компонентам (итого 0-100 баллов):
  *
  *   Финансовый мэтч   0-30  — площадь и бюджет
- *   Технический мэтч  0-20  — вода, вытяжка, мощность, вход
+ *   Технический мэтч  0-20  — 8 критериев: вода, вытяжка, вход, мощность,
+ *                             санузел, парковка, зона разгрузки, потолки + ремонт
  *   Конкуренты        0-50  — реальные данные 2GIS о конкурентах в радиусе
  */
 @Service
@@ -110,27 +112,47 @@ public class PropertyScoringService {
 
     // =========================================================================
     //  КОМПОНЕНТ 2: Технический мэтч (0-20 баллов)
-    //  4 критерия × 5 баллов. Штраф только если арендатор явно требует опцию.
+    //
+    //  Штрафная модель: начинаем с 20, вычитаем за несоответствия.
+    //  Штрафы за "требуемые" опции срабатывают только если арендатор явно требует.
+    //  Штраф за SHELL_AND_CORE — безусловный (объективная характеристика).
+    //
+    //  Вода (обяз.)          -4
+    //  Вытяжка (обяз.)       -4
+    //  Отд. вход (обяз.)     -3
+    //  Мощность (обяз.)      -3
+    //  Санузел (обяз.)       -3
+    //  Парковка (обяз.)      -2
+    //  Зона разгрузки (обяз.)-2
+    //  Потолки (обяз.)       -2
+    //  Черновой ремонт       -1  (всегда)
     // =========================================================================
 
     private int calculateTechnicalScore(SearchProfile profile, Property property) {
         int score = MAX_TECHNICAL_SCORE;
 
-        if (Boolean.TRUE.equals(profile.getRequiresWater()) && !Boolean.TRUE.equals(property.getHasWater())) {
-            score -= 5;
-        }
-        if (Boolean.TRUE.equals(profile.getRequiresVentilation()) && !Boolean.TRUE.equals(property.getHasVentilation())) {
-            score -= 5;
-        }
-        if (Boolean.TRUE.equals(profile.getRequiresSeparateEntrance()) && !Boolean.TRUE.equals(property.getHasSeparateEntrance())) {
-            score -= 5;
-        }
+        if (Boolean.TRUE.equals(profile.getRequiresWater()) && !Boolean.TRUE.equals(property.getHasWater()))
+            score -= 4;
+        if (Boolean.TRUE.equals(profile.getRequiresVentilation()) && !Boolean.TRUE.equals(property.getHasVentilation()))
+            score -= 4;
+        if (Boolean.TRUE.equals(profile.getRequiresSeparateEntrance()) && !Boolean.TRUE.equals(property.getHasSeparateEntrance()))
+            score -= 3;
         if (profile.getMinPowerKw() != null && profile.getMinPowerKw() > 0) {
             int power = property.getPowerKw() != null ? property.getPowerKw() : 0;
-            if (power < profile.getMinPowerKw()) {
-                score -= 5;
-            }
+            if (power < profile.getMinPowerKw()) score -= 3;
         }
+        if (Boolean.TRUE.equals(profile.getRequiresWc()) && !Boolean.TRUE.equals(property.getHasWc()))
+            score -= 3;
+        if (Boolean.TRUE.equals(profile.getRequiresParking()) && !Boolean.TRUE.equals(property.getHasParking()))
+            score -= 2;
+        if (Boolean.TRUE.equals(profile.getRequiresLoadingZone()) && !Boolean.TRUE.equals(property.getHasLoadingZone()))
+            score -= 2;
+        if (profile.getMinCeilingHeight() != null && property.getCeilingHeight() != null
+                && property.getCeilingHeight().compareTo(profile.getMinCeilingHeight()) < 0)
+            score -= 2;
+
+        // Безусловный штраф за черновое состояние
+        if (property.getRepairState() == RepairState.SHELL_AND_CORE) score -= 1;
 
         return Math.max(score, 0);
     }

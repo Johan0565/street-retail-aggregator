@@ -5,6 +5,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.util.Set;
 
+
 @Data
 public class CreateSearchProfileRequest {
 
@@ -23,6 +24,10 @@ public class CreateSearchProfileRequest {
     private Boolean requiresWater;              // Нужна мокрая точка
     private Boolean requiresVentilation;        // Нужна вытяжка
     private Boolean requiresSeparateEntrance;   // Нужен отдельный вход
+    private Boolean requiresWc;                 // Нужен санузел
+    private Boolean requiresParking;            // Нужна парковка
+    private Boolean requiresLoadingZone;        // Нужна зона разгрузки
+    private BigDecimal minCeilingHeight;        // Мин. высота потолков, м
 
     // --- Локация ---
     private BigDecimal centerLatitude;          // Широта центра поиска
