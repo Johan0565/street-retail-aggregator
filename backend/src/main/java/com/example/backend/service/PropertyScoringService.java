@@ -11,19 +11,14 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.*;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Сервис интеллектуального скоринга помещений.
+ * Скоринг помещений по трём компонентам (итого 0-100 баллов):
  *
- * Алгоритм оценивает каждое помещение по 4 компонентам:
- *   - Финансовый мэтч   (0-20 баллов) — площадь и бюджет
- *   - Технический мэтч  (0-40 баллов) — критичные требования бизнеса
- *   - Локация/синергия  (0-25 баллов) — расстояние и желаемые соседи
- *   - Конкуренты        (0-15 баллов) — отсутствие прямых конкурентов
- *
- * ИТОГО: 0-100 баллов
+ *   Финансовый мэтч   0-30  — площадь и бюджет
+ *   Технический мэтч  0-20  — вода, вытяжка, мощность, вход
+ *   Конкуренты        0-50  — реальные данные 2GIS о конкурентах в радиусе
  */
 @Service
 @Slf4j
@@ -33,76 +28,80 @@ public class PropertyScoringService {
     private final GisSearchService gisSearchService;
     private final BusinessCategoryRepository businessCategoryRepository;
 
-    // --- Веса компонентов (в сумме = 100) ---
-    private static final int MAX_FINANCIAL_SCORE = 20;
-    private static final int MAX_TECHNICAL_SCORE = 40;
-    private static final int MAX_LOCATION_SCORE  = 25;
-    private static final int MAX_COMPETITOR_SCORE = 15;
+    private static final int MAX_FINANCIAL_SCORE   = 30;
+    private static final int MAX_TECHNICAL_SCORE   = 20;
+    private static final int MAX_COMPETITOR_SCORE  = 50;
+
+    // =========================================================================
+    //  ПУБЛИЧНЫЕ МЕТОДЫ
+    // =========================================================================
 
     /**
-     * Оценить список помещений по профилю поиска и вернуть отсортированный результат.
+     * Оценить и отсортировать список помещений для рекомендательного экрана.
+     * Категории загружаются один раз, 2GIS-ответы кэшируются по локации.
      */
     public List<ScoredPropertyDto> scoreAndRankProperties(SearchProfile profile, List<Property> properties) {
+        List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
         return properties.stream()
-                .map(property -> scoreProperty(profile, property))
+                .map(p -> scoreInternal(profile, p, allCategories))
                 .sorted(Comparator.comparingInt(ScoredPropertyDto::getTotalScore).reversed())
                 .collect(Collectors.toList());
     }
 
     /**
-     * Рассчитать скоринг для одного помещения.
+     * Оценить одно помещение (используется на экране карточки объекта).
      */
-    public ScoredPropertyDto scoreProperty(SearchProfile profile, Property property) {
-        int financialScore  = calculateFinancialScore(profile, property);
-        int technicalScore  = calculateTechnicalScore(profile, property);
-        int locationScore   = calculateLocationScore(profile, property);
-        int competitorScore = calculateCompetitorScore(profile, property);
+    public ScoredPropertyDto scorePropertyWithGis(SearchProfile profile, Property property) {
+        List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
+        return scoreInternal(profile, property, allCategories);
+    }
 
-        int total = financialScore + technicalScore + locationScore + competitorScore;
+    // =========================================================================
+    //  ЕДИНЫЙ ВНУТРЕННИЙ SCORER
+    // =========================================================================
 
-        String matchLabel = resolveMatchLabel(total);
-        String matchColor = resolveMatchColor(total);
+    private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
+                                             List<BusinessCategory> allCategories) {
+        int financial   = calculateFinancialScore(profile, property);
+        int technical   = calculateTechnicalScore(profile, property);
+        int competitors = calculateCompetitorScore(profile, property, allCategories);
+        int total       = financial + technical + competitors;
 
-        log.debug("Property [{}] scored: total={}, financial={}, technical={}, location={}, competitor={}",
-                property.getId(), total, financialScore, technicalScore, locationScore, competitorScore);
+        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}",
+                property.getId(), total, financial, technical, competitors);
 
         return ScoredPropertyDto.builder()
                 .property(property)
                 .totalScore(total)
-                .financialScore(financialScore)
-                .technicalScore(technicalScore)
-                .locationScore(locationScore)
-                .competitorScore(competitorScore)
-                .matchLabel(matchLabel)
-                .matchColor(matchColor)
+                .financialScore(financial)
+                .technicalScore(technical)
+                .competitorScore(competitors)
+                .matchLabel(resolveMatchLabel(total))
+                .matchColor(resolveMatchColor(total))
                 .build();
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 1: Финансовый мэтч (0-20 баллов)
-    //  Оценивает попадание площади и цены в указанный арендатором диапазон.
+    //  КОМПОНЕНТ 1: Финансовый мэтч (0-30 баллов)
+    //  Площадь (0-15) + Бюджет (0-15)
     // =========================================================================
+
     private int calculateFinancialScore(SearchProfile profile, Property property) {
         int score = 0;
 
-        // --- Площадь (0-10 баллов) ---
         if (property.getAreaSqm() != null) {
-            boolean areaOk = isInRange(property.getAreaSqm(), profile.getMinArea(), profile.getMaxArea());
-            if (areaOk) {
-                score += 10;
+            if (isInRange(property.getAreaSqm(), profile.getMinArea(), profile.getMaxArea())) {
+                score += 15;
             } else {
-                // Частичный балл, если выходит за диапазон не более чем на 20%
-                score += partialScore(property.getAreaSqm(), profile.getMinArea(), profile.getMaxArea(), 10);
+                score += partialScore(property.getAreaSqm(), profile.getMinArea(), profile.getMaxArea(), 15);
             }
         }
 
-        // --- Бюджет (0-10 баллов) ---
         if (property.getPricePerMonth() != null) {
-            boolean priceOk = isInRange(property.getPricePerMonth(), profile.getMinBudget(), profile.getMaxBudget());
-            if (priceOk) {
-                score += 10;
+            if (isInRange(property.getPricePerMonth(), profile.getMinBudget(), profile.getMaxBudget())) {
+                score += 15;
             } else {
-                score += partialScore(property.getPricePerMonth(), profile.getMinBudget(), profile.getMaxBudget(), 10);
+                score += partialScore(property.getPricePerMonth(), profile.getMinBudget(), profile.getMaxBudget(), 15);
             }
         }
 
@@ -110,34 +109,26 @@ public class PropertyScoringService {
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 2: Технический мэтч (0-40 баллов)
-    //  Каждое критичное требование бизнеса — обязательное условие.
-    //  Отсутствие = штраф. Наличие = полный балл.
+    //  КОМПОНЕНТ 2: Технический мэтч (0-20 баллов)
+    //  4 критерия × 5 баллов. Штраф только если арендатор явно требует опцию.
     // =========================================================================
+
     private int calculateTechnicalScore(SearchProfile profile, Property property) {
-        // 4 критерия по 10 баллов каждый
         int score = MAX_TECHNICAL_SCORE;
 
-        // --- Вода (10 баллов) ---
         if (Boolean.TRUE.equals(profile.getRequiresWater()) && !Boolean.TRUE.equals(property.getHasWater())) {
-            score -= 10; // Критическое требование не выполнено
+            score -= 5;
         }
-
-        // --- Вытяжка (10 баллов) ---
         if (Boolean.TRUE.equals(profile.getRequiresVentilation()) && !Boolean.TRUE.equals(property.getHasVentilation())) {
-            score -= 10;
+            score -= 5;
         }
-
-        // --- Отдельный вход (10 баллов) ---
         if (Boolean.TRUE.equals(profile.getRequiresSeparateEntrance()) && !Boolean.TRUE.equals(property.getHasSeparateEntrance())) {
-            score -= 10;
+            score -= 5;
         }
-
-        // --- Электрическая мощность (10 баллов) ---
         if (profile.getMinPowerKw() != null && profile.getMinPowerKw() > 0) {
-            int propertyPower = property.getPowerKw() != null ? property.getPowerKw() : 0;
-            if (propertyPower < profile.getMinPowerKw()) {
-                score -= 10;
+            int power = property.getPowerKw() != null ? property.getPowerKw() : 0;
+            if (power < profile.getMinPowerKw()) {
+                score -= 5;
             }
         }
 
@@ -145,207 +136,25 @@ public class PropertyScoringService {
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 3: Локация и синергия (0-25 баллов)
-    //  15 баллов — расстояние от центра поиска
-    //  10 баллов — наличие желаемых соседей в здании
-    // =========================================================================
-    private int calculateLocationScore(SearchProfile profile, Property property) {
-        int score = 0;
-
-        // --- Расстояние (0-15 баллов) ---
-        if (profile.getCenterLatitude() != null && profile.getCenterLongitude() != null
-                && property.getLatitude() != null && property.getLongitude() != null) {
-
-            double distanceMeters = haversineDistanceMeters(
-                    profile.getCenterLatitude().doubleValue(),
-                    profile.getCenterLongitude().doubleValue(),
-                    property.getLatitude().doubleValue(),
-                    property.getLongitude().doubleValue()
-            );
-
-            int radius = profile.getSearchRadiusMeters() != null ? profile.getSearchRadiusMeters() : 5000;
-
-            if (distanceMeters <= radius * 0.33) {
-                score += 15; // В пределах 1/3 радиуса — максимум
-            } else if (distanceMeters <= radius * 0.66) {
-                score += 10; // В пределах 2/3 радиуса
-            } else if (distanceMeters <= radius) {
-                score += 5;  // В пределах радиуса
-            }
-            // За пределами радиуса — 0 баллов
-        } else {
-            // Если координаты не заданы, локация не учитывается — даём половину баллов
-            score += 8;
-        }
-
-        // --- Синергичные соседи (0-10 баллов) ---
-        Set<BusinessCategory> desiredNeighbors = profile.getDesiredNeighbors();
-        Set<BusinessCategory> existingNeighbors = property.getExistingNeighbors();
-
-        if (desiredNeighbors != null && !desiredNeighbors.isEmpty()
-                && existingNeighbors != null && !existingNeighbors.isEmpty()) {
-
-            long matches = desiredNeighbors.stream()
-                    .filter(desired -> existingNeighbors.stream()
-                            .anyMatch(existing -> existing.getId().equals(desired.getId())))
-                    .count();
-
-            // Пропорциональный балл: нашли всех желаемых соседей — максимум
-            int synergyScore = (int) Math.round((double) matches / desiredNeighbors.size() * 10);
-            score += synergyScore;
-        }
-
-        return Math.min(score, MAX_LOCATION_SCORE);
-    }
-
-    // =========================================================================
-    //  КОМПОНЕНТ 4: Анализ конкурентов (0-15 баллов)
-    //  Если в здании уже есть конкурент (та же категория) — штраф.
-    //  Нет конкурентов — максимальный балл.
-    // =========================================================================
-    private int calculateCompetitorScore(SearchProfile profile, Property property) {
-        if (profile.getBusinessCategory() == null) {
-            return MAX_COMPETITOR_SCORE; // Категория не задана — конкурентов нет
-        }
-
-        Set<BusinessCategory> existingNeighbors = property.getExistingNeighbors();
-        if (existingNeighbors == null || existingNeighbors.isEmpty()) {
-            return MAX_COMPETITOR_SCORE; // В здании нет зарегистрированных соседей
-        }
-
-        Long targetCategoryId = profile.getBusinessCategory().getId();
-
-        // Проверяем прямых конкурентов (та же категория)
-        boolean hasDirectCompetitor = existingNeighbors.stream()
-                .anyMatch(neighbor -> neighbor.getId().equals(targetCategoryId));
-
-        // Проверяем косвенных конкурентов (та же родительская категория)
-        boolean hasIndirectCompetitor = !hasDirectCompetitor && existingNeighbors.stream()
-                .anyMatch(neighbor -> neighbor.getParentCategory() != null
-                        && profile.getBusinessCategory().getParentCategory() != null
-                        && neighbor.getParentCategory().getId().equals(
-                                profile.getBusinessCategory().getParentCategory().getId()));
-
-        if (hasDirectCompetitor) {
-            return 0; // Прямой конкурент — максимальный штраф
-        } else if (hasIndirectCompetitor) {
-            return MAX_COMPETITOR_SCORE / 2; // Косвенный конкурент — половина штрафа
-        } else {
-            return MAX_COMPETITOR_SCORE; // Нет конкурентов — максимум
-        }
-    }
-
-    // =========================================================================
-    //  ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    //  КОМПОНЕНТ 3: Анализ конкурентов через 2GIS (0-50 баллов)
+    //
+    //  Считаем прямых конкурентов (та же категория) и косвенных (та же
+    //  родительская категория). Чем больше конкурентов — тем ниже балл.
+    //
+    //  Прямые  | Косвенные | Балл
+    //  ---------|-----------|-----
+    //  0        | 0         | 50
+    //  0        | 1–2       | 40
+    //  0        | 3–5       | 30
+    //  0        | 6+        | 20
+    //  1        | —         | 20
+    //  2        | —         | 10
+    //  3–4      | —         |  5
+    //  5+       | —         |  0
     // =========================================================================
 
-    /**
-     * Формула Haversine — расстояние между двумя точками на сфере в метрах.
-     */
-    private double haversineDistanceMeters(double lat1, double lon1, double lat2, double lon2) {
-        final int EARTH_RADIUS_METERS = 6_371_000;
-
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return EARTH_RADIUS_METERS * c;
-    }
-
-    /**
-     * Проверяет, попадает ли значение в диапазон [min, max].
-     * Если граница не задана (null) — считается «бесконечной».
-     */
-    private boolean isInRange(BigDecimal value, BigDecimal min, BigDecimal max) {
-        if (min != null && value.compareTo(min) < 0) return false;
-        if (max != null && value.compareTo(max) > 0) return false;
-        return true;
-    }
-
-    /**
-     * Частичный балл при небольшом выходе за диапазон (до 20% от границы).
-     * Возвращает 0, если выход за диапазон более 20%.
-     */
-    private int partialScore(BigDecimal value, BigDecimal min, BigDecimal max, int maxPoints) {
-        if (min != null && value.compareTo(min) < 0) {
-            double ratio = value.doubleValue() / min.doubleValue();
-            if (ratio >= 0.8) return (int) Math.round(maxPoints * ratio * 0.5);
-        }
-        if (max != null && value.compareTo(max) > 0) {
-            double ratio = max.doubleValue() / value.doubleValue();
-            if (ratio >= 0.8) return (int) Math.round(maxPoints * ratio * 0.5);
-        }
-        return 0;
-    }
-
-    /**
-     * Текстовая метка мэтча по итоговому баллу.
-     */
-    private String resolveMatchLabel(int score) {
-        if (score >= 75) return "🔥 Отличный мэтч!";
-        if (score >= 50) return "👍 Хороший вариант";
-        if (score >= 25) return "⚠️ Частичное совпадение";
-        return "❌ Не подходит";
-    }
-
-    /**
-     * Цвет для отображения на карте и UI.
-     */
-    private String resolveMatchColor(int score) {
-        if (score >= 75) return "green";
-        if (score >= 50) return "yellow";
-        return "red";
-    }
-
-    // =========================================================================
-    //  СКОРИНГ С РЕАЛЬНЫМИ ДАННЫМИ 2GIS (для карточки объекта)
-    // =========================================================================
-
-    /**
-     * Рассчитать скоринг для одного помещения с запросом реальных данных о
-     * конкурентах через 2GIS Places API. Использует кэш результатов 2GIS.
-     */
-    public ScoredPropertyDto scorePropertyWithGis(SearchProfile profile, Property property) {
-        List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
-
-        int financialScore  = calculateFinancialScore(profile, property);
-        int technicalScore  = calculateTechnicalScore(profile, property);
-        int locationScore   = calculateLocationScore(profile, property);
-        int competitorScore = calculateCompetitorScoreWithGis(profile, property, allCategories);
-
-        int total = financialScore + technicalScore + locationScore + competitorScore;
-
-        log.debug("GIS-scoring property [{}]: total={}, financial={}, technical={}, location={}, competitor={}",
-                property.getId(), total, financialScore, technicalScore, locationScore, competitorScore);
-
-        return ScoredPropertyDto.builder()
-                .property(property)
-                .totalScore(total)
-                .financialScore(financialScore)
-                .technicalScore(technicalScore)
-                .locationScore(locationScore)
-                .competitorScore(competitorScore)
-                .matchLabel(resolveMatchLabel(total))
-                .matchColor(resolveMatchColor(total))
-                .build();
-    }
-
-    /**
-     * Компонент конкурентов на основе реальных данных 2GIS.
-     *
-     * Шкала:
-     *   0 прямых конкурентов, 0 косвенных → 15 баллов
-     *   0 прямых, есть косвенные          → 8–12 баллов
-     *   1 прямой конкурент                → 6 баллов
-     *   2 прямых конкурента               → 3 балла
-     *   3+ прямых конкурентов             → 0 баллов
-     */
-    private int calculateCompetitorScoreWithGis(SearchProfile profile, Property property,
-                                                List<BusinessCategory> allCategories) {
+    private int calculateCompetitorScore(SearchProfile profile, Property property,
+                                          List<BusinessCategory> allCategories) {
         if (profile.getBusinessCategory() == null
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
@@ -366,7 +175,7 @@ public class PropertyScoringService {
         }
 
         BusinessCategory target = profile.getBusinessCategory();
-        long direct = 0;
+        long direct   = 0;
         long indirect = 0;
 
         for (String rubric : nearbyRubrics) {
@@ -382,24 +191,27 @@ public class PropertyScoringService {
             }
         }
 
-        log.debug("Конкуренты вблизи property [{}]: прямых={}, косвенных={}", property.getId(), direct, indirect);
+        log.debug("Конкуренты у property [{}] (радиус {}м): прямых={}, косвенных={}",
+                property.getId(), radius, direct, indirect);
 
-        if (direct >= 3) return 0;
-        if (direct == 2) return 3;
-        if (direct == 1) return 6;
-        if (indirect >= 3) return 8;
-        if (indirect >= 1) return 12;
+        if (direct >= 5) return 0;
+        if (direct >= 3) return 5;
+        if (direct == 2) return 10;
+        if (direct == 1) return 20;
+        // Нет прямых конкурентов
+        if (indirect >= 6) return 20;
+        if (indirect >= 3) return 30;
+        if (indirect >= 1) return 40;
         return MAX_COMPETITOR_SCORE;
     }
 
     /**
-     * Сопоставляет название рубрики 2GIS с нашей категорией бизнеса.
-     * Использует word-boundary матч для однословных ключевых слов и
-     * substring-матч для многословных.
+     * Сопоставляет рубрику 2GIS с категорией из нашего справочника.
+     * Однословные ключевые слова — word-boundary (предотвращает "бар" → "барбершоп").
+     * Многословные — substring-матч.
      */
     private BusinessCategory matchRubricToCategory(String rubricName, List<BusinessCategory> categories) {
         String lowerRubric = rubricName.toLowerCase();
-        // Набор слов из названия рубрики (без знаков пунктуации)
         Set<String> rubricWords = new HashSet<>(
                 Arrays.asList(lowerRubric.replaceAll("[^а-яёa-z0-9\\s]", " ").trim().split("\\s+"))
         );
@@ -411,18 +223,49 @@ public class PropertyScoringService {
                 kw = kw.trim();
                 if (kw.isEmpty()) continue;
 
-                boolean matches;
-                if (kw.contains(" ")) {
-                    // Многословное ключевое слово: проверяем вхождение подстроки
-                    matches = lowerRubric.contains(kw);
-                } else {
-                    // Однословное: точное совпадение слова (предотвращает "бар" → "барбершоп")
-                    matches = rubricWords.contains(kw);
-                }
+                boolean matches = kw.contains(" ")
+                        ? lowerRubric.contains(kw)
+                        : rubricWords.contains(kw);
 
                 if (matches) return cat;
             }
         }
         return null;
+    }
+
+    // =========================================================================
+    //  ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    // =========================================================================
+
+    private boolean isInRange(BigDecimal value, BigDecimal min, BigDecimal max) {
+        if (min != null && value.compareTo(min) < 0) return false;
+        if (max != null && value.compareTo(max) > 0) return false;
+        return true;
+    }
+
+    /** Частичный балл при выходе за диапазон не более чем на 20%. */
+    private int partialScore(BigDecimal value, BigDecimal min, BigDecimal max, int maxPoints) {
+        if (min != null && value.compareTo(min) < 0) {
+            double ratio = value.doubleValue() / min.doubleValue();
+            if (ratio >= 0.8) return (int) Math.round(maxPoints * ratio * 0.5);
+        }
+        if (max != null && value.compareTo(max) > 0) {
+            double ratio = max.doubleValue() / value.doubleValue();
+            if (ratio >= 0.8) return (int) Math.round(maxPoints * ratio * 0.5);
+        }
+        return 0;
+    }
+
+    private String resolveMatchLabel(int score) {
+        if (score >= 75) return "🔥 Отличный мэтч!";
+        if (score >= 50) return "👍 Хороший вариант";
+        if (score >= 25) return "⚠️ Частичное совпадение";
+        return "❌ Не подходит";
+    }
+
+    private String resolveMatchColor(int score) {
+        if (score >= 75) return "green";
+        if (score >= 50) return "yellow";
+        return "red";
     }
 }

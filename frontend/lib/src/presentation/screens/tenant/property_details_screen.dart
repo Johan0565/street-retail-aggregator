@@ -126,10 +126,9 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _scoreBar('Финансовый', scored.financialScore, 20),
-          _scoreBar('Технический', scored.technicalScore, 40),
-          _scoreBar('Локация', scored.locationScore, 25),
-          _scoreBar('Конкуренты', scored.competitorScore, 15),
+          _scoreBar('Финансовый', scored.financialScore, 30),
+          _scoreBar('Технический', scored.technicalScore, 20),
+          _scoreBar('Конкуренты', scored.competitorScore, 50),
         ],
       ),
     );
