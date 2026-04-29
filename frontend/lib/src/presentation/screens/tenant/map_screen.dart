@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import '../../../domain/property.dart';
+import '../../../domain/property_filter.dart';
 import '../../../domain/search_profile.dart';
 import '../../../services/property_service.dart';
 import '../../../services/search_profile_service.dart';
 import 'property_details_screen.dart';
-import 'search_profiles_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 
@@ -30,6 +30,8 @@ class _MapScreenState extends State<MapScreen> {
   SearchProfile? _activeProfile;
   // Кэш: propertyId -> ScoredProperty (для bottomSheet)
   Map<int, ScoredProperty> _scoreCache = {};
+  List<Property> _allProperties = [];
+  PropertyFilter _activeFilter = PropertyFilter.empty;
 
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
@@ -6688,7 +6690,6 @@ class _MapScreenState extends State<MapScreen> {
       List<Property> properties;
       final Map<int, ScoredProperty> newCache = {};
 
-      // Если есть активный профиль — загружаем со скорингом
       if (_activeProfile != null && !widget.isLandlordMode) {
         final scored = await _scoringService.getScoredProperties(_activeProfile!.id);
         for (final sp in scored) {
@@ -6699,76 +6700,11 @@ class _MapScreenState extends State<MapScreen> {
         properties = await _propertyService.getAllProperties();
       }
 
-      // Кэш для иконок маркеров (чтобы не перерисовывать одинаковые)
-      final Map<String, Uint8List> iconCache = {};
-      
-      // Параллельная подготовка всех маркеров
-      final List<Future<PlacemarkMapObject>> markerFutures = properties.map((property) async {
-        final scored = newCache[property.id];
-        // Если нет скоринга, используем оранжевый вместо черного (черный плохо виден)
-        final markerColor = scored != null ? scored.flutterColor : _primaryOrange;
-        final score = scored?.totalScore;
-        
-        final cacheKey = '${markerColor.value}_$score';
-        Uint8List? iconBytes = iconCache[cacheKey];
-        
-        if (iconBytes == null) {
-          iconBytes = await _buildMarkerIcon(markerColor, score);
-          iconCache[cacheKey] = iconBytes;
-        }
-
-        return PlacemarkMapObject(
-          mapId: MapObjectId('property_${property.id}'),
-          point: Point(latitude: property.latitude, longitude: property.longitude),
-          opacity: 1,
-          icon: PlacemarkIcon.single(
-            PlacemarkIconStyle(
-              image: BitmapDescriptor.fromBytes(iconBytes),
-              scale: 1.0,
-            ),
-          ),
-          onTap: (PlacemarkMapObject self, Point point) {
-            _showPropertyDetails(property);
-          },
-        );
-      }).toList();
-
-      final List<PlacemarkMapObject> placemarks = await Future.wait(markerFutures);
-
-      final clusterizedCollection = ClusterizedPlacemarkCollection(
-        mapId: const MapObjectId('clusterized_collection'),
-        placemarks: placemarks,
-        radius: 40,
-        minZoom: 15,
-        onClusterAdded: (ClusterizedPlacemarkCollection self, Cluster cluster) async {
-          return cluster.copyWith(
-            appearance: cluster.appearance.copyWith(
-              opacity: 1.0,
-              icon: PlacemarkIcon.single(
-                PlacemarkIconStyle(
-                  image: BitmapDescriptor.fromBytes(
-                    await _buildClusterIcon(cluster.size),
-                  ),
-                  scale: 1.0,
-                ),
-              ),
-            ),
-          );
-        },
-        onClusterTap: (ClusterizedPlacemarkCollection self, Cluster cluster) {
-          mapController.moveCamera(
-            CameraUpdate.zoomIn(),
-            animation: const MapAnimation(type: MapAnimationType.linear, duration: 0.3),
-          );
-        },
-      );
-
       if (mounted) {
-        setState(() {
-          mapObjects = [clusterizedCollection];
-          _scoreCache = newCache;
-          _isLoading = false;
-        });
+        _allProperties = properties;
+        _scoreCache = newCache;
+        setState(() => _isLoading = false);
+        await _rebuildMarkersFromCache();
       }
     } catch (e) {
       if (mounted) {
@@ -6778,6 +6714,65 @@ class _MapScreenState extends State<MapScreen> {
         );
       }
     }
+  }
+
+  // Применяет активный фильтр к кэшу и перерисовывает маркеры без сетевого запроса.
+  Future<void> _rebuildMarkersFromCache() async {
+    final properties = _activeFilter.apply(_allProperties);
+    final Map<String, Uint8List> iconCache = {};
+
+    final List<Future<PlacemarkMapObject>> markerFutures = properties.map((property) async {
+      final scored = _scoreCache[property.id];
+      final markerColor = scored != null ? scored.flutterColor : _primaryOrange;
+      final score = scored?.totalScore;
+
+      final cacheKey = '${markerColor.toARGB32()}_$score';
+      Uint8List? iconBytes = iconCache[cacheKey];
+      if (iconBytes == null) {
+        iconBytes = await _buildMarkerIcon(markerColor, score);
+        iconCache[cacheKey] = iconBytes;
+      }
+
+      return PlacemarkMapObject(
+        mapId: MapObjectId('property_${property.id}'),
+        point: Point(latitude: property.latitude, longitude: property.longitude),
+        opacity: 1,
+        icon: PlacemarkIcon.single(
+          PlacemarkIconStyle(image: BitmapDescriptor.fromBytes(iconBytes), scale: 1.0),
+        ),
+        onTap: (PlacemarkMapObject self, Point point) => _showPropertyDetails(property),
+      );
+    }).toList();
+
+    final placemarks = await Future.wait(markerFutures);
+
+    final clusterizedCollection = ClusterizedPlacemarkCollection(
+      mapId: const MapObjectId('clusterized_collection'),
+      placemarks: placemarks,
+      radius: 40,
+      minZoom: 15,
+      onClusterAdded: (ClusterizedPlacemarkCollection self, Cluster cluster) async {
+        return cluster.copyWith(
+          appearance: cluster.appearance.copyWith(
+            opacity: 1.0,
+            icon: PlacemarkIcon.single(
+              PlacemarkIconStyle(
+                image: BitmapDescriptor.fromBytes(await _buildClusterIcon(cluster.size)),
+                scale: 1.0,
+              ),
+            ),
+          ),
+        );
+      },
+      onClusterTap: (ClusterizedPlacemarkCollection self, Cluster cluster) {
+        mapController.moveCamera(
+          CameraUpdate.zoomIn(),
+          animation: const MapAnimation(type: MapAnimationType.linear, duration: 0.3),
+        );
+      },
+    );
+
+    if (mounted) setState(() => mapObjects = [clusterizedCollection]);
   }
 
   // Генерация цветного маркера с баллом скоринга
@@ -6969,6 +6964,221 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Future<void> _applyFilter(PropertyFilter filter) async {
+    setState(() => _activeFilter = filter);
+    await _rebuildMarkersFromCache();
+  }
+
+  void _showFilterSheet() {
+    double? minPrice = _activeFilter.minPrice;
+    double? maxPrice = _activeFilter.maxPrice;
+    double? minArea  = _activeFilter.minArea;
+    double? maxArea  = _activeFilter.maxArea;
+    String metro     = _activeFilter.metroStation ?? '';
+    Set<String> selectedTypes = Set.from(_activeFilter.propertyTypes);
+    bool onlyFree    = _activeFilter.onlyFree;
+
+    final minPriceCtrl = TextEditingController(text: minPrice?.toInt().toString() ?? '');
+    final maxPriceCtrl = TextEditingController(text: maxPrice?.toInt().toString() ?? '');
+    final minAreaCtrl  = TextEditingController(text: minArea?.toInt().toString() ?? '');
+    final maxAreaCtrl  = TextEditingController(text: maxArea?.toInt().toString() ?? '');
+    final metroCtrl    = TextEditingController(text: metro);
+
+    const typeLabels = {
+      'OFFICE':     'Офис',
+      'RETAIL':     'Ритейл',
+      'WAREHOUSE':  'Склад',
+      'PRODUCTION': 'Производство',
+      'PSN':        'ПСН',
+      'CATERING':   'Общепит',
+    };
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Заголовок ──────────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Фильтры',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    TextButton(
+                      onPressed: () => setSheet(() {
+                        minPrice = maxPrice = minArea = maxArea = null;
+                        metro = '';
+                        selectedTypes = {};
+                        onlyFree = false;
+                        minPriceCtrl.clear(); maxPriceCtrl.clear();
+                        minAreaCtrl.clear();  maxAreaCtrl.clear();
+                        metroCtrl.clear();
+                      }),
+                      child: const Text('Сбросить', style: TextStyle(color: Colors.grey)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // ── Цена ───────────────────────────────────────────────
+                const Text('Цена (₽/мес)',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: _filterTextField(minPriceCtrl, 'от', isNumeric: true,
+                      onChanged: (v) => minPrice = double.tryParse(v))),
+                  const SizedBox(width: 12),
+                  Expanded(child: _filterTextField(maxPriceCtrl, 'до', isNumeric: true,
+                      onChanged: (v) => maxPrice = double.tryParse(v))),
+                ]),
+                const SizedBox(height: 16),
+
+                // ── Площадь ────────────────────────────────────────────
+                const Text('Площадь (м²)',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: _filterTextField(minAreaCtrl, 'от', isNumeric: true,
+                      onChanged: (v) => minArea = double.tryParse(v))),
+                  const SizedBox(width: 12),
+                  Expanded(child: _filterTextField(maxAreaCtrl, 'до', isNumeric: true,
+                      onChanged: (v) => maxArea = double.tryParse(v))),
+                ]),
+                const SizedBox(height: 16),
+
+                // ── Метро ──────────────────────────────────────────────
+                const Text('Метро',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                _filterTextField(metroCtrl, 'Название станции',
+                    onChanged: (v) => metro = v),
+                const SizedBox(height: 16),
+
+                // ── Тип помещения ──────────────────────────────────────
+                const Text('Тип помещения',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: typeLabels.entries.map((e) {
+                    final selected = selectedTypes.contains(e.key);
+                    return FilterChip(
+                      label: Text(e.value,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: selected ? _primaryOrange : Colors.black87,
+                            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                          )),
+                      selected: selected,
+                      onSelected: (v) => setSheet(() {
+                        v ? selectedTypes.add(e.key) : selectedTypes.remove(e.key);
+                      }),
+                      selectedColor: _primaryOrange.withValues(alpha: 0.12),
+                      checkmarkColor: _primaryOrange,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(color: selected ? _primaryOrange : Colors.grey.shade300),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+
+                // ── Только свободные ───────────────────────────────────
+                Container(
+                  decoration: BoxDecoration(
+                      color: Colors.grey[50], borderRadius: BorderRadius.circular(12)),
+                  child: SwitchListTile(
+                    title: const Text('Только свободные',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    subtitle: const Text('Помещения без арендатора',
+                        style: TextStyle(fontSize: 12)),
+                    value: onlyFree,
+                    onChanged: (v) => setSheet(() => onlyFree = v),
+                    activeThumbColor: _primaryOrange,
+                    activeTrackColor: _primaryOrange.withValues(alpha: 0.4),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Применить ──────────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _applyFilter(PropertyFilter(
+                        minPrice: minPrice,
+                        maxPrice: maxPrice,
+                        minArea:  minArea,
+                        maxArea:  maxArea,
+                        metroStation: metro.isEmpty ? null : metro,
+                        propertyTypes: selectedTypes,
+                        onlyFree: onlyFree,
+                      ));
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: const Text('Применить',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterTextField(
+    TextEditingController ctrl,
+    String hint, {
+    bool isNumeric = false,
+    required Function(String) onChanged,
+  }) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+      onChanged: onChanged,
+      style: const TextStyle(fontSize: 14),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+        filled: true,
+        fillColor: Colors.grey[50],
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFFF8C00), width: 1.5)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -7043,25 +7253,37 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black87,
-                            shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 5))],
-                          ),
-                          child: IconButton(
-                            icon: Icon(Icons.tune, color: _primaryOrange),
-                            onPressed: () async {
-                              final result = await Navigator.push<bool>(
-                                context,
-                                MaterialPageRoute(builder: (_) => const SearchProfilesScreen()),
-                              );
-                              if (result == true || result == null) {
-                                _loadProfilesThenProperties();
-                              }
-                            },
-                            padding: const EdgeInsets.all(12),
-                          ),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: _activeFilter.isActive ? _primaryOrange : Colors.black87,
+                                shape: BoxShape.circle,
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 15, offset: const Offset(0, 5))],
+                              ),
+                              child: IconButton(
+                                icon: Icon(Icons.tune,
+                                    color: _activeFilter.isActive ? Colors.white : _primaryOrange),
+                                onPressed: _showFilterSheet,
+                                padding: const EdgeInsets.all(12),
+                              ),
+                            ),
+                            if (_activeFilter.isActive)
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                  child: Center(
+                                    child: Text('${_activeFilter.activeCount}',
+                                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
@@ -7106,6 +7328,39 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         ),
                       ],
+                    // ── Счётчик результатов при активном фильтре ──────
+                    if (_activeFilter.isActive) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _primaryOrange,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))],
+                            ),
+                            child: Text(
+                              '${_activeFilter.apply(_allProperties).length} из ${_allProperties.length}',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _applyFilter(PropertyFilter.empty),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8)],
+                              ),
+                              child: const Text('Сбросить', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

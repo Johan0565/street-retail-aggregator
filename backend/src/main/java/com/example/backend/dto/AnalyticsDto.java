@@ -8,7 +8,9 @@ import java.util.Map;
 @Builder
 public class AnalyticsDto {
     private long totalViewsLast30Days;
+    private long totalFavoritesLast30Days;
     private long totalApplications;
-    private long totalFavorites;
+    private long totalUniqueMessengers;
     private Map<String, Long> viewsByDate;
+    private Map<String, Long> favoritesByDate;
 }

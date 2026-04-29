@@ -5,25 +5,37 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class AnalyticsDto {
   final int totalViewsLast30Days;
+  final int totalFavoritesLast30Days;
   final int totalApplications;
-  final int totalFavorites;
+  final int totalUniqueMessengers;
   final Map<String, int> viewsByDate;
+  final Map<String, int> favoritesByDate;
 
   AnalyticsDto({
     required this.totalViewsLast30Days,
+    required this.totalFavoritesLast30Days,
     required this.totalApplications,
-    required this.totalFavorites,
+    required this.totalUniqueMessengers,
     required this.viewsByDate,
+    required this.favoritesByDate,
   });
 
   factory AnalyticsDto.fromJson(Map<String, dynamic> json) {
     return AnalyticsDto(
       totalViewsLast30Days:
           (json['totalViewsLast30Days'] as num?)?.toInt() ?? 0,
+      totalFavoritesLast30Days:
+          (json['totalFavoritesLast30Days'] as num?)?.toInt() ?? 0,
       totalApplications: (json['totalApplications'] as num?)?.toInt() ?? 0,
-      totalFavorites: (json['totalFavorites'] as num?)?.toInt() ?? 0,
+      totalUniqueMessengers:
+          (json['totalUniqueMessengers'] as num?)?.toInt() ?? 0,
       viewsByDate:
           (json['viewsByDate'] as Map<String, dynamic>?)?.map(
+                (key, value) => MapEntry(key, (value as num).toInt()),
+              ) ??
+              {},
+      favoritesByDate:
+          (json['favoritesByDate'] as Map<String, dynamic>?)?.map(
                 (key, value) => MapEntry(key, (value as num).toInt()),
               ) ??
               {},
@@ -71,7 +83,7 @@ class AnalyticsService {
             : null,
       );
     } catch (_) {
-      // Ignore errors for analytics logging
+      // Игнорируем ошибки аналитики
     }
   }
 }

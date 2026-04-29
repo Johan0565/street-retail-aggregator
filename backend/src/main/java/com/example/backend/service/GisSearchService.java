@@ -10,9 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Клиент 2GIS Places API.
@@ -35,8 +33,9 @@ public class GisSearchService {
     private final RestClient restClient = RestClient.create();
 
     /**
-     * Возвращает список уникальных рубрик (строчных, нормализованных) в заданном радиусе
-     * от точки (lat, lon). Кэш-ключ строится по округлённым до ~111 м координатам.
+     * Возвращает список рубрик для каждого заведения в заданном радиусе.
+     * Каждый вложенный список — рубрики одного конкретного заведения (branch).
+     * Кэш-ключ строится по округлённым до ~111 м координатам.
      *
      * Примечание: 2GIS принимает координаты в порядке lon,lat.
      */
@@ -44,7 +43,7 @@ public class GisSearchService {
             value = "gisNearby",
             key = "T(Math).round(#lat * 1000) + '_' + T(Math).round(#lon * 1000) + '_' + #radiusMeters"
     )
-    public List<String> getNearbyRubricNames(double lat, double lon, int radiusMeters) {
+    public List<List<String>> getNearbyRubricNames(double lat, double lon, int radiusMeters) {
         int radius = Math.min(radiusMeters, MAX_RADIUS);
         String url = GIS_API_BASE
                 + "?point=" + lon + "," + lat
@@ -60,33 +59,43 @@ public class GisSearchService {
                     .retrieve()
                     .body(String.class);
 
-            return parseRubricNames(body);
+            List<List<String>> result = parseRubricNames(body);
+            log.info("2GIS вернул {} заведений в радиусе {}м (lat={}, lon={})", result.size(), radius, lat, lon);
+            if (!result.isEmpty()) {
+                log.info("Рубрики первых {} заведений: {}", Math.min(result.size(), 5), result.subList(0, Math.min(result.size(), 5)));
+            }
+            return result;
         } catch (Exception e) {
             log.warn("2GIS API недоступен (lat={}, lon={}, r={}): {}", lat, lon, radius, e.getMessage());
             return List.of();
         }
     }
 
-    private List<String> parseRubricNames(String json) {
+    // Возвращает по одному списку рубрик на каждое заведение (не дедуплицирует между заведениями).
+    private List<List<String>> parseRubricNames(String json) {
         try {
             JsonNode root = objectMapper.readTree(json);
             JsonNode items = root.path("result").path("items");
 
-            Set<String> names = new LinkedHashSet<>();
+            List<List<String>> perItemRubrics = new ArrayList<>();
             if (items.isArray()) {
                 for (JsonNode item : items) {
                     JsonNode rubrics = item.path("rubrics");
+                    List<String> itemRubricNames = new ArrayList<>();
                     if (rubrics.isArray()) {
                         for (JsonNode rubric : rubrics) {
                             String name = rubric.path("name").asText("").trim();
                             if (!name.isEmpty()) {
-                                names.add(name.toLowerCase());
+                                itemRubricNames.add(name.toLowerCase());
                             }
                         }
                     }
+                    if (!itemRubricNames.isEmpty()) {
+                        perItemRubrics.add(itemRubricNames);
+                    }
                 }
             }
-            return new ArrayList<>(names);
+            return perItemRubrics;
         } catch (Exception e) {
             log.warn("Ошибка парсинга ответа 2GIS: {}", e.getMessage());
             return List.of();

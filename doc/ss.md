@@ -172,10 +172,11 @@ GisSearchService.java — 2GIS клиент
     value = "gisNearby",
     key = "T(Math).round(#lat * 1000) + '_' + T(Math).round(#lon * 1000) + '_' + #radiusMeters"
 )
-public List<String> getNearbyRubricNames(double lat, double lon, int radiusMeters) {
+public List<List<String>> getNearbyRubricNames(double lat, double lon, int radiusMeters) {
     // URL: https://catalog.api.2gis.com/3.0/items?point=LON,LAT&radius=R&type=branch&fields=items.rubrics
     // ВАЖНО: 2GIS принимает lon,lat (не lat,lon)
-    // Возвращает дедуплицированные строчные названия рубрик
+    // Возвращает List<List<String>>: каждый вложенный список — рубрики ОДНОГО заведения
+    // (не дедуплицирует между заведениями — это было главным багом!)
     // При ошибке — пустой список (не кидает исключение)
 }
 BusinessCategory.java — КРИТИЧЕСКИ ВАЖНАЯ ПРАВКА
@@ -259,8 +260,4 @@ Flutter property_details_screen.dart: секция быстрых тегов д�
 12	Технический скоринг — штрафная модель. Штраф за SHELL_AND_CORE (-1) безусловный, остальные — только если арендатор явно требует опцию	Важно
 13	БД: myuser / mypassword / retail_aggregator / порт 5434	Справка
 14	2GIS API ключ: 4864f04f-8983-435a-ae2e-06ed696ed550	Справка
-7. Возможные следующие задачи
-Исправить trailing space в DataInitializer для "Бар" — строка "паб,пивной бар,..." → убрать пробел перед закрывающей кавычкой
-Добавить координаты центра поиска в профиль — сейчас форма не позволяет арендатору указать точку на карте (centerLatitude/centerLongitude), из-за чего радиусная часть не работает
-Фото помещений — сейчас показывается только серый placeholder
-Чат — файл chat_screen.dart существует, статус неизвестен
+1. Возможные следующие задачи

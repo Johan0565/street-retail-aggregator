@@ -187,34 +187,50 @@ public class PropertyScoringService {
                 ? Math.min(profile.getSearchRadiusMeters(), 5000)
                 : 1000;
 
-        List<String> nearbyRubrics = gisSearchService.getNearbyRubricNames(
+        // Каждый вложенный список — рубрики одного конкретного заведения
+        List<List<String>> nearbyBusinesses = gisSearchService.getNearbyRubricNames(
                 property.getLatitude().doubleValue(),
                 property.getLongitude().doubleValue(),
                 radius);
 
-        if (nearbyRubrics.isEmpty()) {
+        if (nearbyBusinesses.isEmpty()) {
             return MAX_COMPETITOR_SCORE;
         }
 
         BusinessCategory target = profile.getBusinessCategory();
+        Long targetParentId = target.getParentCategory() != null
+                ? target.getParentCategory().getId()
+                : null;
+
         long direct   = 0;
         long indirect = 0;
 
-        for (String rubric : nearbyRubrics) {
-            BusinessCategory matched = matchRubricToCategory(rubric, allCategories);
-            if (matched == null) continue;
+        // Считаем заведения, а не уникальные рубрики: одно заведение — один конкурент
+        for (List<String> businessRubrics : nearbyBusinesses) {
+            boolean isDirect   = false;
+            boolean isIndirect = false;
 
-            if (matched.getId().equals(target.getId())) {
-                direct++;
-            } else if (matched.getParentCategory() != null
-                    && target.getParentCategory() != null
-                    && matched.getParentCategory().getId().equals(target.getParentCategory().getId())) {
-                indirect++;
+            for (String rubric : businessRubrics) {
+                BusinessCategory matched = matchRubricToCategory(rubric, allCategories);
+                if (matched == null) continue;
+
+                if (matched.getId().equals(target.getId())) {
+                    isDirect = true;
+                    break; // прямое совпадение — дальше не ищем
+                }
+                if (targetParentId != null
+                        && matched.getParentCategory() != null
+                        && matched.getParentCategory().getId().equals(targetParentId)) {
+                    isIndirect = true; // продолжаем — может быть прямое совпадение в другой рубрике
+                }
             }
+
+            if (isDirect)        direct++;
+            else if (isIndirect) indirect++;
         }
 
-        log.debug("Конкуренты у property [{}] (радиус {}м): прямых={}, косвенных={}",
-                property.getId(), radius, direct, indirect);
+        log.info("Конкуренты у property [{}] (радиус {}м): прямых={}, косвенных={}, всего заведений={}",
+                property.getId(), radius, direct, indirect, nearbyBusinesses.size());
 
         if (direct >= 5) return 0;
         if (direct >= 3) return 5;

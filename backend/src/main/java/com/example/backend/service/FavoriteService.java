@@ -16,6 +16,7 @@ public class FavoriteService {
 
     private final UserRepository userRepository;
     private final PropertyRepository propertyRepository;
+    private final AnalyticsService analyticsService;
 
     @Transactional
     public void addFavorite(Long tenantId, Long propertyId) {
@@ -28,6 +29,7 @@ public class FavoriteService {
         // Добавляем помещение в Set. Благодаря @ManyToMany Hibernate сам обновит таблицу favorites
         user.getFavoriteProperties().add(property);
         userRepository.save(user);
+        analyticsService.logFavoriteEvent(propertyId, tenantId);
     }
 
     @Transactional

@@ -34,6 +34,8 @@ class Property {
   final String? heatingType;
   final String? furnitureState;
   final bool? isOccupied;
+  final String? metroStation;
+  final int? timeToMetro;
 
   Property({
     required this.id,
@@ -51,6 +53,8 @@ class Property {
     this.heatingType,
     this.furnitureState,
     this.isOccupied,
+    this.metroStation,
+    this.timeToMetro,
     this.dealType,
     required this.powerKw,
     required this.hasWater,
@@ -96,6 +100,8 @@ class Property {
       heatingType: json['heatingType']?.toString(),
       furnitureState: json['furnitureState']?.toString(),
       isOccupied: json['isOccupied'] == true,
+      metroStation: json['metroStation']?.toString(),
+      timeToMetro: (json['timeToMetro'] as num?)?.toInt(),
     );
   }
 }
