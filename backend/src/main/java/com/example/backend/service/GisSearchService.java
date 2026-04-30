@@ -41,7 +41,8 @@ public class GisSearchService {
      */
     @Cacheable(
             value = "gisNearby",
-            key = "T(Math).round(#lat * 1000) + '_' + T(Math).round(#lon * 1000) + '_' + #radiusMeters"
+            key = "T(Math).round(#lat * 1000) + '_' + T(Math).round(#lon * 1000) + '_' + #radiusMeters",
+            unless = "#result == null || #result.isEmpty()"
     )
     public List<List<String>> getNearbyRubricNames(double lat, double lon, int radiusMeters) {
         int radius = Math.min(radiusMeters, MAX_RADIUS);
