@@ -5,6 +5,7 @@ import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.SearchProfile;
 import com.example.backend.entity.User;
 import com.example.backend.service.SearchProfileService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +30,7 @@ public class SearchProfileController {
     @PostMapping
     @PreAuthorize("hasRole('TENANT')")
     public ResponseEntity<SearchProfile> createSearchProfile(
-            @RequestBody CreateSearchProfileRequest request,
+            @Valid @RequestBody CreateSearchProfileRequest request,
             Principal principal) {
 
         Long tenantId = extractUserId(principal);
@@ -70,7 +71,7 @@ public class SearchProfileController {
     @PreAuthorize("hasRole('TENANT')")
     public ResponseEntity<SearchProfile> updateSearchProfile(
             @PathVariable Long id,
-            @RequestBody CreateSearchProfileRequest request,
+            @Valid @RequestBody CreateSearchProfileRequest request,
             Principal principal) {
 
         Long tenantId = extractUserId(principal);

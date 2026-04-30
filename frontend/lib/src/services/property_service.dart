@@ -191,29 +191,43 @@ class PropertyService {
     }
   }
 
+  /// Запрашивает AI-объяснение оценки помещения.
+  /// Таймаут увеличен до 45 с — LLM может думать долго.
+  Future<String?> explainScore(int propertyId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.get(
+        '/properties/$propertyId/score-explain',
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 10),
+        ),
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data['explanation'] as String?;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<List<Property>> getAllProperties() async {
     try {
-
       final token = await _storage.read(key: 'jwt_token');
-      print('>>> ТОКЕН ДЛЯ ЗАПРОСА: $token'); // Проверяем, есть ли токен
-
       final response = await _dio.get(
         '/properties',
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
-
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
-        print('API вернул ${data.length} объектов');
         return data.map((json) => Property.fromJson(json)).toList();
       }
-      print('>>> ОШИБКА ОТВЕТА СЕРВЕРА: ${response.statusCode} - ${response.data}');
       return [];
-    } on DioException catch (e) {
-      print('>>> СЕТЕВАЯ ОШИБКА DIO: ${e.response?.statusCode} - ${e.response?.data}');
+    } on DioException catch (_) {
       return [];
-    } catch (e) {
-      print('>>> ОШИБКА ПАРСИНГА: $e');
+    } catch (_) {
       return [];
     }
   }

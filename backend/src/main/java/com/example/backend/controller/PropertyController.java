@@ -1,9 +1,11 @@
 package com.example.backend.controller;
 
 import com.example.backend.dto.CreatePropertyRequest;
+import com.example.backend.dto.ScoreExplainResponse;
 import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.User;
+import com.example.backend.service.OpenRouterAiService;
 import com.example.backend.service.PropertyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,6 +23,7 @@ import java.util.List;
 public class PropertyController {
 
     private final PropertyService propertyService;
+    private final OpenRouterAiService openRouterAiService;
 
     @GetMapping("/{id}")
     public ResponseEntity<Property> getPropertyById(@PathVariable Long id) {
@@ -61,6 +64,24 @@ public class PropertyController {
         }
         throw new RuntimeException("Не удалось извлечь ID пользователя из токена");
     }
+    /**
+     * GET /api/properties/{id}/score-explain
+     * Генерирует текстовое объяснение оценки помещения через LLM (OpenRouter).
+     * 204 — если у арендатора нет активного профиля поиска.
+     */
+    @GetMapping("/{id}/score-explain")
+    @PreAuthorize("hasRole('TENANT')")
+    public ResponseEntity<ScoreExplainResponse> explainPropertyScore(
+            @PathVariable Long id,
+            Principal principal) {
+        Long tenantId = extractUserIdFromPrincipal(principal);
+        ScoredPropertyDto scored = propertyService.scorePropertyForTenant(tenantId, id);
+        if (scored == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(openRouterAiService.explainScore(scored));
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('LANDLORD')")
     public ResponseEntity<Property> createProperty(

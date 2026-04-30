@@ -353,6 +353,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   ] else if ((widget.scoredProperty ?? _loadedScore) != null) ...[
                     const SizedBox(height: 16),
                     _buildScoringCard((widget.scoredProperty ?? _loadedScore)!),
+                    const SizedBox(height: 10),
+                    _buildAiExplainButton(),
                   ],
                   const SizedBox(height: 24),
 
@@ -433,7 +435,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           ? Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]),
+        decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5))]),
         child: ElevatedButton(
           onPressed: widget.property.status == 'ARCHIVED' ? null : () => _showApplicationSheet(context, widget.property),
           style: ElevatedButton.styleFrom(
@@ -456,7 +458,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -497,6 +499,46 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
+  Widget _buildAiExplainButton() {
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _AiExplainSheet(propertyId: widget.property.id),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1A1A2E), Color(0xFF2D2B55)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.auto_awesome, color: Color(0xFFFF8C00), size: 18),
+            SizedBox(width: 10),
+            Text(
+              'Объяснить оценку',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 0.2,
+              ),
+            ),
+            Spacer(),
+            Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildInfrastructureSection() {
     return FutureBuilder<List<PoiDto>>(
       future: _poiFuture,
@@ -525,7 +567,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: iconColor.withOpacity(0.1),
+                      color: iconColor.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(icon, color: iconColor, size: 20),
@@ -544,6 +586,150 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           }).toList(),
         );
       },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  AI BottomSheet — загружает и показывает объяснение оценки
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _AiExplainSheet extends StatefulWidget {
+  final int propertyId;
+
+  const _AiExplainSheet({required this.propertyId});
+
+  @override
+  State<_AiExplainSheet> createState() => _AiExplainSheetState();
+}
+
+class _AiExplainSheetState extends State<_AiExplainSheet> {
+  String? _explanation;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    final result = await PropertyService().explainScore(widget.propertyId);
+    if (!mounted) return;
+    setState(() {
+      _explanation = result;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.75;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Ручка
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 4),
+
+            // Шапка с градиентом
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1A1A2E), Color(0xFF2D2B55)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF8C00).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.auto_awesome, color: Color(0xFFFF8C00), size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AI Анализ помещения',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      Text(
+                        'Объяснение оценки по данным алгоритма',
+                        style: TextStyle(color: Colors.white54, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Тело — скроллируемое, не переполняет экран
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPadding + 28),
+                child: _isLoading
+                    ? const Column(
+                        children: [
+                          SizedBox(height: 8),
+                          CircularProgressIndicator(strokeWidth: 2),
+                          SizedBox(height: 14),
+                          Text(
+                            'Анализируем помещение...',
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
+                          SizedBox(height: 8),
+                        ],
+                      )
+                    : _explanation != null
+                        ? Text(
+                            _explanation!,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.65,
+                              color: Colors.black87,
+                            ),
+                          )
+                        : const Row(
+                            children: [
+                              Icon(Icons.wifi_off_rounded, color: Colors.grey, size: 18),
+                              SizedBox(width: 8),
+                              Text(
+                                'AI-анализ временно недоступен',
+                                style: TextStyle(color: Colors.grey, fontSize: 14),
+                              ),
+                            ],
+                          ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

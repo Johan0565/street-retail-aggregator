@@ -64,20 +64,22 @@ public class PropertyScoringService {
 
     private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
                                              List<BusinessCategory> allCategories) {
-        int financial   = calculateFinancialScore(profile, property);
-        int technical   = calculateTechnicalScore(profile, property);
-        int competitors = calculateCompetitorScore(profile, property, allCategories);
-        int total       = financial + technical + competitors;
+        int financial              = calculateFinancialScore(profile, property);
+        int technical              = calculateTechnicalScore(profile, property);
+        CompetitorResult compResult = calculateCompetitorScore(profile, property, allCategories);
+        int total                  = financial + technical + compResult.score();
 
         log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}",
-                property.getId(), total, financial, technical, competitors);
+                property.getId(), total, financial, technical, compResult.score());
 
         return ScoredPropertyDto.builder()
                 .property(property)
                 .totalScore(total)
                 .financialScore(financial)
                 .technicalScore(technical)
-                .competitorScore(competitors)
+                .competitorScore(compResult.score())
+                .directCompetitorNames(compResult.directNames())
+                .indirectCompetitorNames(compResult.indirectNames())
                 .matchLabel(resolveMatchLabel(total))
                 .matchColor(resolveMatchColor(total))
                 .build();
@@ -175,72 +177,77 @@ public class PropertyScoringService {
     //  5+       | —         |  0
     // =========================================================================
 
-    private int calculateCompetitorScore(SearchProfile profile, Property property,
-                                          List<BusinessCategory> allCategories) {
+    private record CompetitorResult(int score, List<String> directNames, List<String> indirectNames) {}
+
+    private CompetitorResult calculateCompetitorScore(SearchProfile profile, Property property,
+                                                       List<BusinessCategory> allCategories) {
         if (profile.getBusinessCategory() == null
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
-            return MAX_COMPETITOR_SCORE;
+            return new CompetitorResult(MAX_COMPETITOR_SCORE, List.of(), List.of());
         }
 
         int radius = profile.getSearchRadiusMeters() != null
                 ? Math.min(profile.getSearchRadiusMeters(), 5000)
                 : 1000;
 
-        // Каждый вложенный список — рубрики одного конкретного заведения
-        List<List<String>> nearbyBusinesses = gisSearchService.getNearbyRubricNames(
-                property.getLatitude().doubleValue(),
-                property.getLongitude().doubleValue(),
-                radius);
-
-        if (nearbyBusinesses.isEmpty()) {
-            return MAX_COMPETITOR_SCORE;
-        }
-
         BusinessCategory target = profile.getBusinessCategory();
         Long targetParentId = target.getParentCategory() != null
                 ? target.getParentCategory().getId()
                 : null;
 
+        List<NearbyBusiness> nearbyBusinesses = gisSearchService.getNearbyBusinesses(
+                property.getLatitude().doubleValue(),
+                property.getLongitude().doubleValue(),
+                radius);
+
+        if (nearbyBusinesses.isEmpty()) {
+            return new CompetitorResult(MAX_COMPETITOR_SCORE, List.of(), List.of());
+        }
+
         long direct   = 0;
         long indirect = 0;
+        List<String> directNames   = new ArrayList<>();
+        List<String> indirectNames = new ArrayList<>();
 
-        // Считаем заведения, а не уникальные рубрики: одно заведение — один конкурент
-        for (List<String> businessRubrics : nearbyBusinesses) {
+        // Де-дупликация: одно заведение → максимум +1 к одному счётчику.
+        for (NearbyBusiness business : nearbyBusinesses) {
             boolean isDirect   = false;
             boolean isIndirect = false;
 
-            for (String rubric : businessRubrics) {
+            for (String rubric : business.rubrics()) {
                 BusinessCategory matched = matchRubricToCategory(rubric, allCategories);
                 if (matched == null) continue;
 
                 if (matched.getId().equals(target.getId())) {
                     isDirect = true;
-                    break; // прямое совпадение — дальше не ищем
+                    break;
                 }
                 if (targetParentId != null
                         && matched.getParentCategory() != null
                         && matched.getParentCategory().getId().equals(targetParentId)) {
-                    isIndirect = true; // продолжаем — может быть прямое совпадение в другой рубрике
+                    isIndirect = true;
                 }
             }
 
-            if (isDirect)        direct++;
-            else if (isIndirect) indirect++;
+            if (isDirect)        { direct++;   directNames.add(business.name()); }
+            else if (isIndirect) { indirect++; indirectNames.add(business.name()); }
         }
 
-        log.info("Конкуренты у property [{}] (радиус {}м): прямых={}, косвенных={}, всего заведений={}",
-                property.getId(), radius, direct, indirect, nearbyBusinesses.size());
+        log.info("[COMP-SCORE] property={}: прямых={} {}, косвенных={} {}, всего={}",
+                property.getId(), direct, directNames, indirect, indirectNames, nearbyBusinesses.size());
 
-        if (direct >= 5) return 0;
-        if (direct >= 3) return 5;
-        if (direct == 2) return 10;
-        if (direct == 1) return 20;
-        // Нет прямых конкурентов
-        if (indirect >= 6) return 20;
-        if (indirect >= 3) return 30;
-        if (indirect >= 1) return 40;
-        return MAX_COMPETITOR_SCORE;
+        int score;
+        if      (direct >= 5) score = 0;
+        else if (direct >= 3) score = 5;
+        else if (direct == 2) score = 10;
+        else if (direct == 1) score = 20;
+        else if (indirect >= 6) score = 20;
+        else if (indirect >= 3) score = 30;
+        else if (indirect >= 1) score = 40;
+        else                    score = MAX_COMPETITOR_SCORE;
+
+        return new CompetitorResult(score, directNames, indirectNames);
     }
 
     /**
@@ -254,6 +261,8 @@ public class PropertyScoringService {
                 Arrays.asList(lowerRubric.replaceAll("[^а-яёa-z0-9\\s]", " ").trim().split("\\s+"))
         );
 
+        log.info("[MATCH] Рубрика: '{}' | токены: {}", rubricName, rubricWords);
+
         for (BusinessCategory cat : categories) {
             if (cat.getTwoGisKeywords() == null || cat.getTwoGisKeywords().isBlank()) continue;
 
@@ -261,13 +270,22 @@ public class PropertyScoringService {
                 kw = kw.trim();
                 if (kw.isEmpty()) continue;
 
-                boolean matches = kw.contains(" ")
-                        ? lowerRubric.contains(kw)
-                        : rubricWords.contains(kw);
+                boolean multiWord = kw.contains(" ");
+                boolean matches   = multiWord ? lowerRubric.contains(kw) : rubricWords.contains(kw);
 
-                if (matches) return cat;
+                log.info("[MATCH]   cat='{}' (id={}) | kw='{}' | multiWord={} | rubric содержит: {} → {}",
+                        cat.getName(), cat.getId(), kw, multiWord,
+                        multiWord ? "'" + lowerRubric + "'" : rubricWords.toString(),
+                        matches ? "✅ MATCH" : "—");
+
+                if (matches) {
+                    log.info("[MATCH] ✅ ИТОГ: '{}' → cat='{}' (id={})", rubricName, cat.getName(), cat.getId());
+                    return cat;
+                }
             }
         }
+
+        log.info("[MATCH] ❌ ИТОГ: '{}' — не сопоставлена ни с одной категорией", rubricName);
         return null;
     }
 

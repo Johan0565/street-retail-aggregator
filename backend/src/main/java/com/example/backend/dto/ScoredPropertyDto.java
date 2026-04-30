@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -22,4 +24,10 @@ public class ScoredPropertyDto {
 
     private String matchLabel;    // "🔥 Отличный мэтч!", "👍 Хороший вариант", ...
     private String matchColor;    // "green", "yellow", "red"
+
+    // Имена конкурентов, выявленных 2GIS-анализом
+    @Builder.Default
+    private List<String> directCompetitorNames   = List.of(); // та же категория бизнеса
+    @Builder.Default
+    private List<String> indirectCompetitorNames = List.of(); // смежная категория
 }

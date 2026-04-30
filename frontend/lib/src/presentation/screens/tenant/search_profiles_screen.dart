@@ -112,10 +112,29 @@ class _SearchProfilesScreenState extends State<SearchProfilesScreen> {
         children: [
           Icon(Icons.search_off_rounded, size: 80, color: Colors.grey[300]),
           const SizedBox(height: 16),
-          const Text('Нет проектов поиска', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black54)),
+          const Text('Нет проектов поиска',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black54)),
           const SizedBox(height: 8),
           const Text('Создайте проект, чтобы алгоритм\nподбирал помещения под ваш бизнес',
               textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)),
+          const SizedBox(height: 28),
+          ElevatedButton.icon(
+            onPressed: () async {
+              final result = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const CreateSearchProfileScreen()),
+              );
+              if (result == true) _loadProfiles();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Создать первый проект', style: TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: _primaryOrange,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
         ],
       ),
     );
