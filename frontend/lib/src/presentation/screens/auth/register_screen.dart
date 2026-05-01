@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
 import '../../../services/auth_service.dart';
 import '../landlord/LandlordMainScreen.dart';
-import '../tenant/tenant_main_screen.dart'; // Для перехода на MapScreen
+import '../tenant/tenant_main_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,22 +12,39 @@ class RegisterScreen extends StatefulWidget {
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
+class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProviderStateMixin {
   final _authService = AuthService();
 
-  // Контроллеры формы
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   final _innController = TextEditingController();
   final _phoneController = TextEditingController();
 
-  String _selectedRole = 'TENANT'; // По умолчанию арендатор
+  String _selectedRole = 'TENANT';
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
-  // --- Логика регистрации ---
+  late AnimationController _animController;
+  late Animation<Offset> _contentSlide;
+  late Animation<double> _contentFade;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _contentSlide = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+    );
+    _contentFade = CurvedAnimation(parent: _animController, curve: Curves.easeIn);
+    _animController.forward();
+  }
+
   Future<void> _handleRegister() async {
     final email = _emailController.text.trim();
     if (email.isEmpty || _passwordController.text.isEmpty) {
@@ -51,21 +68,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = false);
 
     if (success) {
-      // Если регистрация успешна, открываем шторку с кодом
       _showVerificationSheet(email);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ошибка регистрации. Возможно, email уже занят.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Ошибка регистрации. Возможно, email уже занят.'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
-  // --- Мини-окошко (Bottom Sheet) для ввода кода ---
   void _showVerificationSheet(String email) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      isDismissible: false, // Нельзя закрыть просто свайпом вниз
+      isDismissible: false,
       enableDrag: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -75,16 +93,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
           email: email,
           authService: _authService,
           primaryOrange: _primaryOrange,
-          onEmailEditTap: () {
-            Navigator.pop(context); // Закрываем шторку, возвращаемся к форме
-          },
+          onEmailEditTap: () => Navigator.pop(context),
           onVerified: () async {
-            // Читаем роль после успешного ввода кода
             final role = await _authService.getUserRole();
             if (!context.mounted) return;
-
-            Navigator.pop(context); // Закрываем шторку с пин-кодом
-
+            Navigator.pop(context);
             if (role == 'LANDLORD') {
               Navigator.pushReplacement(
                 context,
@@ -112,65 +125,101 @@ class _RegisterScreenState extends State<RegisterScreen> {
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Create an account',
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.black),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 30),
-
-                // Выбор роли
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'TENANT', label: Text('Ищу площадь')),
-                    ButtonSegment(value: 'LANDLORD', label: Text('Сдаю площадь')),
-                  ],
-                  selected: {_selectedRole},
-                  onSelectionChanged: (Set<String> newSelection) {
-                    setState(() => _selectedRole = newSelection.first);
-                  },
-                  style: ButtonStyle(
-                    backgroundColor: MaterialStateProperty.resolveWith((states) {
-                      if (states.contains(MaterialState.selected)) return _primaryOrange.withOpacity(0.2);
-                      return Colors.white;
-                    }),
-                    iconColor: MaterialStateProperty.all(_primaryOrange),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 8),
+          child: FadeTransition(
+            opacity: _contentFade,
+            child: SlideTransition(
+              position: _contentSlide,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Create account',
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                      letterSpacing: -0.5,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(height: 20),
-
-                // Поля ввода
-                _buildTextField(_nameController, Icons.business, 'ФИО или Название компании'),
-                const SizedBox(height: 16),
-                _buildTextField(_innController, Icons.numbers, 'ИНН', isNumber: true),
-                const SizedBox(height: 16),
-                _buildTextField(_phoneController, Icons.phone, 'Телефон', isNumber: true),
-                const SizedBox(height: 16),
-                _buildTextField(_emailController, Icons.email, 'Email'),
-                const SizedBox(height: 16),
-                _buildTextField(_passwordController, Icons.lock, 'Password', isObscure: true),
-                const SizedBox(height: 30),
-
-                // Кнопка регистрации
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _handleRegister,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryOrange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Зарегистрируйтесь, чтобы начать',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                    textAlign: TextAlign.center,
                   ),
-                  child: _isLoading
-                      ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Sign up', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
-              ],
+                  const SizedBox(height: 28),
+
+                  // Custom role selector
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      children: [
+                        _buildRoleTab('TENANT', 'Ищу площадь'),
+                        _buildRoleTab('LANDLORD', 'Сдаю площадь'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildField(_nameController, Icons.person_outline_rounded, 'ФИО или Название компании'),
+                  const SizedBox(height: 14),
+                  _buildField(_innController, Icons.badge_outlined, 'ИНН', isNumber: true),
+                  const SizedBox(height: 14),
+                  _buildField(_phoneController, Icons.phone_outlined, 'Телефон', isNumber: true),
+                  const SizedBox(height: 14),
+                  _buildField(_emailController, Icons.email_outlined, 'Email'),
+                  const SizedBox(height: 14),
+                  _buildField(
+                    _passwordController,
+                    Icons.lock_outline_rounded,
+                    'Пароль',
+                    isObscure: _obscurePassword,
+                    hasVisibilityToggle: true,
+                  ),
+                  const SizedBox(height: 32),
+
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _handleRegister,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primaryOrange,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: _primaryOrange.withValues(alpha: 0.6),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: _isLoading
+                          ? const SizedBox(
+                              key: ValueKey('loading'),
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                            )
+                          : const Text(
+                              key: ValueKey('text'),
+                              'Sign up',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           ),
         ),
@@ -178,23 +227,96 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // Вспомогательный метод для красивых инпутов
-  Widget _buildTextField(TextEditingController controller, IconData icon, String hint, {bool isObscure = false, bool isNumber = false}) {
+  Widget _buildRoleTab(String role, String label) {
+    final isSelected = _selectedRole == role;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedRole = role),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : [],
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              color: isSelected ? _primaryOrange : Colors.grey.shade500,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildField(
+    TextEditingController controller,
+    IconData icon,
+    String hint, {
+    bool isObscure = false,
+    bool isNumber = false,
+    bool hasVisibilityToggle = false,
+  }) {
     return TextField(
       controller: controller,
       obscureText: isObscure,
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      style: const TextStyle(fontSize: 15),
       decoration: InputDecoration(
-        prefixIcon: Icon(icon, color: Colors.black54),
+        prefixIcon: Icon(icon, color: Colors.grey.shade500, size: 20),
+        suffixIcon: hasVisibilityToggle
+            ? IconButton(
+                icon: Icon(
+                  _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  color: Colors.grey.shade400,
+                  size: 20,
+                ),
+                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+              )
+            : null,
         hintText: hint,
-        enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
-        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.black)),
+        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: _primaryOrange, width: 1.5),
+        ),
       ),
     );
   }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _nameController.dispose();
+    _innController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
 }
 
-// --- Отдельный виджет для шторки (чтобы таймер обновлялся без перерисовки всей формы) ---
 class VerificationBottomSheet extends StatefulWidget {
   final String email;
   final AuthService authService;
@@ -216,7 +338,7 @@ class VerificationBottomSheet extends StatefulWidget {
 }
 
 class _VerificationBottomSheetState extends State<VerificationBottomSheet> {
-  int _secondsLeft = 120; // 2 минуты
+  int _secondsLeft = 120;
   Timer? _timer;
   bool _isVerifying = false;
   final _pinController = TextEditingController();
@@ -273,80 +395,125 @@ class _VerificationBottomSheetState extends State<VerificationBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // Стили для ячеек Pinput
     final defaultPinTheme = PinTheme(
-      width: 50,
-      height: 60,
-      textStyle: const TextStyle(fontSize: 24, color: Colors.black, fontWeight: FontWeight.bold),
+      width: 52,
+      height: 58,
+      textStyle: const TextStyle(fontSize: 22, color: Colors.black, fontWeight: FontWeight.bold),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.black26),
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
       ),
     );
 
     return Padding(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom, // Поднимает шторку над клавиатурой
-        left: 24,
-        right: 24,
-        top: 32,
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 28,
+        right: 28,
+        top: 20,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Handle bar
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Icon
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: widget.primaryOrange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(Icons.email_outlined, color: widget.primaryOrange, size: 28),
+          ),
+          const SizedBox(height: 16),
+
           const Text(
             'Check your email',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(
             'We sent a 6-digit code to',
-            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
           ),
+          const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
                 widget.email,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
-              IconButton(
-                icon: Icon(Icons.edit, color: widget.primaryOrange, size: 20),
-                onPressed: widget.onEmailEditTap, // Кнопка исправления почты
-              )
+              GestureDetector(
+                onTap: widget.onEmailEditTap,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Icon(Icons.edit_outlined, color: widget.primaryOrange, size: 18),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
 
-          // Те самые 6 ячеек
           _isVerifying
-              ? const CircularProgressIndicator()
+              ? CircularProgressIndicator(color: widget.primaryOrange)
               : Pinput(
-            length: 6,
-            controller: _pinController,
-            defaultPinTheme: defaultPinTheme,
-            focusedPinTheme: defaultPinTheme.copyDecorationWith(
-              border: Border.all(color: widget.primaryOrange, width: 2),
-            ),
-            onCompleted: _verifyCode, // Автоматически проверяет, когда введено 6 цифр
-          ),
+                  length: 6,
+                  controller: _pinController,
+                  defaultPinTheme: defaultPinTheme,
+                  focusedPinTheme: defaultPinTheme.copyDecorationWith(
+                    border: Border.all(color: widget.primaryOrange, width: 2),
+                    color: widget.primaryOrange.withValues(alpha: 0.05),
+                  ),
+                  submittedPinTheme: defaultPinTheme.copyDecorationWith(
+                    border: Border.all(color: widget.primaryOrange.withValues(alpha: 0.5)),
+                    color: widget.primaryOrange.withValues(alpha: 0.05),
+                  ),
+                  onCompleted: _verifyCode,
+                ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 28),
 
-          // Таймер или кнопка повторной отправки
           _secondsLeft > 0
-              ? Text(
-            'Resend code in ${_secondsLeft ~/ 60}:${(_secondsLeft % 60).toString().padLeft(2, '0')}',
-            style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-          )
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.timer_outlined, size: 16, color: Colors.grey.shade400),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Resend in ${_secondsLeft ~/ 60}:${(_secondsLeft % 60).toString().padLeft(2, '0')}',
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                )
               : TextButton(
-            onPressed: _resendCode,
-            child: Text(
-              'Resend Code',
-              style: TextStyle(color: widget.primaryOrange, fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-          const SizedBox(height: 24),
+                  onPressed: _resendCode,
+                  child: Text(
+                    'Resend Code',
+                    style: TextStyle(
+                      color: widget.primaryOrange,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+          const SizedBox(height: 28),
         ],
       ),
     );
