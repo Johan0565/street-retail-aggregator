@@ -238,10 +238,10 @@ public class PropertyScoringService {
                 property.getId(), direct, directNames, indirect, indirectNames, nearbyBusinesses.size());
 
         int score;
-        if      (direct >= 5) score = 0;
-        else if (direct >= 3) score = 5;
-        else if (direct == 2) score = 10;
-        else if (direct == 1) score = 20;
+        if      (direct >= 5)   score = 0;
+        else if (direct >= 3)   score = 5;
+        else if (direct == 2)   score = 10;
+        else if (direct == 1)   score = 20;
         else if (indirect >= 6) score = 20;
         else if (indirect >= 3) score = 30;
         else if (indirect >= 1) score = 40;
@@ -261,8 +261,6 @@ public class PropertyScoringService {
                 Arrays.asList(lowerRubric.replaceAll("[^а-яёa-z0-9\\s]", " ").trim().split("\\s+"))
         );
 
-        log.info("[MATCH] Рубрика: '{}' | токены: {}", rubricName, rubricWords);
-
         for (BusinessCategory cat : categories) {
             if (cat.getTwoGisKeywords() == null || cat.getTwoGisKeywords().isBlank()) continue;
 
@@ -270,22 +268,13 @@ public class PropertyScoringService {
                 kw = kw.trim();
                 if (kw.isEmpty()) continue;
 
-                boolean multiWord = kw.contains(" ");
-                boolean matches   = multiWord ? lowerRubric.contains(kw) : rubricWords.contains(kw);
+                boolean matches = kw.contains(" ")
+                        ? lowerRubric.contains(kw)
+                        : rubricWords.contains(kw);
 
-                log.info("[MATCH]   cat='{}' (id={}) | kw='{}' | multiWord={} | rubric содержит: {} → {}",
-                        cat.getName(), cat.getId(), kw, multiWord,
-                        multiWord ? "'" + lowerRubric + "'" : rubricWords.toString(),
-                        matches ? "✅ MATCH" : "—");
-
-                if (matches) {
-                    log.info("[MATCH] ✅ ИТОГ: '{}' → cat='{}' (id={})", rubricName, cat.getName(), cat.getId());
-                    return cat;
-                }
+                if (matches) return cat;
             }
         }
-
-        log.info("[MATCH] ❌ ИТОГ: '{}' — не сопоставлена ни с одной категорией", rubricName);
         return null;
     }
 

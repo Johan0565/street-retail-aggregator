@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../../domain/property.dart';
 import '../../../domain/search_profile.dart';
@@ -41,10 +43,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     if (!widget.isLandlordMode) {
       _checkIfFavorite();
       AnalyticsService().logPropertyView(widget.property.id);
-      // Если скор не передан из списка — загружаем с бэкенда (2GIS анализ)
-      if (widget.scoredProperty == null) {
-        _loadScore();
-      }
+      // скор подгружается только явно (кнопкой), чтобы не тратить 2GIS-лимиты при каждом открытии
     } else {
       _isCheckingInitialState = false;
     }
@@ -355,6 +354,9 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     _buildScoringCard((widget.scoredProperty ?? _loadedScore)!),
                     const SizedBox(height: 10),
                     _buildAiExplainButton(),
+                  ] else if (!widget.isLandlordMode) ...[
+                    const SizedBox(height: 16),
+                    _buildScoreRequestButton(),
                   ],
                   const SizedBox(height: 24),
 
@@ -495,6 +497,37 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           const SizedBox(width: 6),
           Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScoreRequestButton() {
+    return GestureDetector(
+      onTap: _loadScore,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: primaryOrange.withValues(alpha: 0.4), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.analytics_rounded, color: primaryOrange, size: 18),
+            const SizedBox(width: 10),
+            const Text(
+              'Оценить под мой проект поиска',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.black87,
+              ),
+            ),
+            const Spacer(),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey[400], size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -694,18 +727,14 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPadding + 28),
                 child: _isLoading
-                    ? const Column(
+                    ? Column(
                         children: [
-                          SizedBox(height: 8),
-                          CircularProgressIndicator(strokeWidth: 2),
-                          SizedBox(height: 14),
-                          Text(
-                            'Анализируем помещение...',
-                            style: TextStyle(color: Colors.grey, fontSize: 14),
-                          ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 16),
+                          const _TypingIndicator(),
+                          const SizedBox(height: 16),
                         ],
                       )
+
                     : _explanation != null
                         ? Text(
                             _explanation!,
@@ -729,6 +758,51 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Анимация "ПЕЧАТАЕТ..." с прыгающими точками
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TypingIndicator extends StatefulWidget {
+  const _TypingIndicator();
+
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator> {
+  int _step = 0;
+  late final Timer _timer;
+
+  static const _dots = ['', '.', '..', '...'];
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 450), (_) {
+      if (mounted) setState(() => _step = (_step + 1) % _dots.length);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'ПЕЧАТАЕТ${_dots[_step]}',
+      style: const TextStyle(
+        color: Color(0xFFFF8C00),
+        fontSize: 14,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 2,
       ),
     );
   }

@@ -13,13 +13,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class OpenRouterAiService {
 
     private static final String MODEL     = "openrouter/free";
-    private static final int    MAX_TOKENS = 350;
+    private static final int    MAX_TOKENS = 500;
 
     // Spring сопоставит bean "openRouterRestClient" с полем по имени
     private final RestClient openRouterRestClient;
@@ -59,6 +62,10 @@ public class OpenRouterAiService {
     private String buildSystemPrompt(ScoredPropertyDto scored) {
         Property p = scored.getProperty();
 
+        String directBlock   = formatCompetitorList(scored.getDirectCompetitorNames(),   "Нет прямых конкурентов");
+        String indirectBlock = formatCompetitorList(scored.getIndirectCompetitorNames(), "Нет косвенных конкурентов");
+        int competitorPenalty = 50 - scored.getCompetitorScore();
+
         return """
                 ЯЗЫК ОТВЕТА: ТОЛЬКО РУССКИЙ. Отвечай исключительно на русском языке — это обязательное требование.
 
@@ -77,10 +84,19 @@ public class OpenRouterAiService {
                 📊 ОЦЕНКА АЛГОРИТМА
                 • Финансовый мэтч (площадь + бюджет): %d/30 баллов
                 • Технический мэтч (оборудование + удобства): %d/20 баллов
-                • Конкурентный анализ (данные 2GIS в радиусе поиска): %d/50 баллов
+                • Конкурентный анализ (данные 2GIS в радиусе поиска): %d/50 баллов (потеряно %d из 50)
                 • ИТОГО: %d/100 — %s
 
-                Напиши 3–4 предложения: что конкретно хорошо подходит, что не совпадает с требованиями, стоит ли рассматривать это помещение. Без списков и маркеров — сплошной текст.
+                🏪 КОНКУРЕНТЫ ПОБЛИЗОСТИ (выявлены 2GIS, реальные данные)
+                Прямые конкуренты: %s
+                Косвенные конкуренты: %s
+
+                ОБЯЗАТЕЛЬНЫЕ ТРЕБОВАНИЯ К ОТВЕТУ:
+                1. Пиши сплошным текстом без маркеров, списков и заголовков.
+                2. Упомяни финансовое и техническое соответствие требованиям.
+                3. КОНКУРЕНТЫ — самая важная часть: если есть прямые конкуренты, назови КАЖДОГО из них по имени и объясни, что именно из-за них конкурентный балл упал на %d очков из возможных 50. Если есть косвенные — тоже назови их и опиши косвенное влияние на конкуренцию.
+                4. Если конкурентов нет — подчеркни это как преимущество и объясни, что именно из-за этого конкурентный балл максимальный.
+                5. Заверши выводом: стоит ли рассматривать это помещение с учётом конкуренции.
                 """.formatted(
                 nvl(p.getAddress()),
                 nvl(p.getAreaSqm()),
@@ -91,8 +107,17 @@ public class OpenRouterAiService {
                 yn(p.getHasWater()), yn(p.getHasVentilation()), yn(p.getHasSeparateEntrance()),
                 yn(p.getHasWc()), yn(p.getHasParking()), yn(p.getHasLoadingZone()),
                 scored.getFinancialScore(), scored.getTechnicalScore(),
-                scored.getCompetitorScore(), scored.getTotalScore(), scored.getMatchLabel()
+                scored.getCompetitorScore(), competitorPenalty,
+                scored.getTotalScore(), scored.getMatchLabel(),
+                directBlock, indirectBlock
         );
+    }
+
+    private String formatCompetitorList(List<String> names, String emptyMessage) {
+        if (names == null || names.isEmpty()) return emptyMessage;
+        List<String> capped = names.size() > 7 ? names.subList(0, 7) : names;
+        String joined = capped.stream().collect(Collectors.joining(", "));
+        return names.size() > 7 ? joined + " и ещё " + (names.size() - 7) : joined;
     }
 
     private String buildRequestBody(String systemPrompt) {

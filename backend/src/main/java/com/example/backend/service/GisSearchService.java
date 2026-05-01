@@ -14,8 +14,8 @@ import java.util.List;
 
 /**
  * Клиент 2GIS Places API.
- * Возвращает список уникальных рубрик организаций в заданном радиусе.
- * Результаты кэшируются на 30 минут (CacheConfig) по округлённым координатам.
+ * Возвращает список заведений (название + рубрики) в заданном радиусе.
+ * Результаты кэшируются по округлённым координатам.
  */
 @Service
 @Slf4j
@@ -33,12 +33,6 @@ public class GisSearchService {
     private final ObjectMapper objectMapper;
     private final RestClient gisRestClient;
 
-    /**
-     * Возвращает список заведений (имя + рубрики) в заданном радиусе.
-     * Кэш-ключ строится по округлённым до ~111 м координатам.
-     *
-     * Примечание: 2GIS принимает координаты в порядке lon,lat.
-     */
     @Cacheable(
             value = "gisNearby",
             key = "T(Math).round(#lat * 1000) + '_' + T(Math).round(#lon * 1000) + '_' + #radiusMeters",
@@ -46,7 +40,7 @@ public class GisSearchService {
     )
     public List<NearbyBusiness> getNearbyBusinesses(double lat, double lon, int radiusMeters) {
         int radius = Math.min(radiusMeters, MAX_RADIUS);
-        List<NearbyBusiness> allBusinesses = new ArrayList<>();
+        List<NearbyBusiness> all = new ArrayList<>();
         int page = 1;
         int totalPages = 1;
 
@@ -59,24 +53,20 @@ public class GisSearchService {
                 int total = root.path("result").path("total").asInt(0);
                 totalPages = (int) Math.ceil((double) total / PAGE_SIZE);
 
-                List<NearbyBusiness> pageBiz = parseBusinesses(root);
-                allBusinesses.addAll(pageBiz);
-                log.debug("2GIS страница {}/{}: получено {} заведений (total={})", page, totalPages, pageBiz.size(), total);
+                List<NearbyBusiness> pageBusinesses = parseBusinesses(root);
+                all.addAll(pageBusinesses);
+                log.debug("2GIS страница {}/{}: получено {} заведений (total={})", page, totalPages, pageBusinesses.size(), total);
             } catch (Exception e) {
                 log.warn("Ошибка парсинга страницы {} 2GIS (lat={}, lon={}): {}", page, lat, lon, e.getMessage());
                 break;
             }
 
-            if (page >= MAX_PAGES) {
-                log.debug("Достигнут лимит страниц 2GIS (MAX_PAGES={}), прерываю сбор", MAX_PAGES);
-                break;
-            }
+            if (page >= MAX_PAGES) break;
             page++;
         } while (page <= totalPages);
 
-        log.info("2GIS итого: {} заведений в радиусе {}м (lat={}, lon={}, страниц: {})",
-                allBusinesses.size(), radius, lat, lon, page);
-        return allBusinesses;
+        log.info("2GIS итого: {} заведений в радиусе {}м (lat={}, lon={})", all.size(), radius, lat, lon);
+        return all;
     }
 
     private String fetchPage(double lat, double lon, int radius, int page) {
@@ -101,8 +91,6 @@ public class GisSearchService {
                 log.warn("[2GIS-RAW] Ответ null (lat={}, lon={}, page={})", lat, lon, page);
                 return null;
             }
-            log.debug("[2GIS-RAW] Ответ (первые 500 символов): {}",
-                    body.length() > 500 ? body.substring(0, 500) + "…" : body);
             return body;
         } catch (Exception e) {
             log.warn("2GIS API недоступен на странице {} (lat={}, lon={}, r={}): {}", page, lat, lon, radius, e.getMessage());
@@ -110,28 +98,31 @@ public class GisSearchService {
         }
     }
 
-    // Принимает уже распарсенный root — тело страницы парсится ровно один раз на итерацию цикла.
     private List<NearbyBusiness> parseBusinesses(JsonNode root) {
         JsonNode items = root.path("result").path("items");
         List<NearbyBusiness> result = new ArrayList<>();
         if (!items.isArray()) return result;
 
         for (JsonNode item : items) {
-            // Имя заведения: name_ex.primary → name → первая рубрика
+            // Извлекаем название заведения
             String name = item.path("name_ex").path("primary").asText("").trim();
             if (name.isEmpty()) name = item.path("name").asText("").trim();
 
-            JsonNode rubrics = item.path("rubrics");
+            // Извлекаем рубрики
             List<String> rubricNames = new ArrayList<>();
+            JsonNode rubrics = item.path("rubrics");
             if (rubrics.isArray()) {
                 for (JsonNode rubric : rubrics) {
-                    String rn = rubric.path("name").asText("").trim();
-                    if (!rn.isEmpty()) rubricNames.add(rn.toLowerCase());
+                    String rubricName = rubric.path("name").asText("").trim();
+                    if (!rubricName.isEmpty()) rubricNames.add(rubricName.toLowerCase());
                 }
             }
+
             if (rubricNames.isEmpty()) continue;
 
-            if (name.isEmpty()) name = rubricNames.get(0); // fallback — первая рубрика
+            // Если имя пустое — используем первую рубрику как fallback
+            if (name.isEmpty()) name = rubricNames.get(0);
+
             result.add(new NearbyBusiness(name, rubricNames));
         }
         return result;

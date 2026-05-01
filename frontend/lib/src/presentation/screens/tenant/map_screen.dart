@@ -6675,7 +6675,7 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         setState(() {
           _myProfiles = profiles;
-          _activeProfile = profiles.isNotEmpty ? profiles.first : null;
+          _activeProfile = null; // не выбираем автоматически — ждём явного выбора
         });
       }
     }
