@@ -1,23 +1,21 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
     container_name: retail_db
     restart: always
     environment:
-      POSTGRES_DB: retail_aggregator
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-    ports:
-      - "5434:5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser -d retail_aggregator"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - retail_net
 
   backend:
     build:
@@ -25,15 +23,55 @@ services:
       dockerfile: Dockerfile
     container_name: retail_backend
     restart: always
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/retail_aggregator
-      - SPRING_DATASOURCE_USERNAME=myuser
-      - SPRING_DATASOURCE_PASSWORD=mypassword
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_JPA_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+      LOG_LEVEL_SECURITY: INFO
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      TWOGIS_API_KEY: ${TWOGIS_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - retail_net
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: retail_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - backend
+    networks:
+      - retail_net
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: retail_certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'"
+
+networks:
+  retail_net:
+    driver: bridge
 
 volumes:
   pgdata:

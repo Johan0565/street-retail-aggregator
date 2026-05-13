@@ -6899,10 +6899,10 @@ class _MapScreenState extends State<MapScreen> {
               if (scored != null) ...
                 [
                   const SizedBox(height: 12),
-                  _buildScoreBar('Финансы', scored.financialScore, 20),
-                  _buildScoreBar('Технические', scored.technicalScore, 40),
-                  _buildScoreBar('Локация', scored.locationScore, 25),
-                  _buildScoreBar('Конкуренты', scored.competitorScore, 15),
+                  _buildScoreBar('Финансы', scored.financialScore, 30),
+                  _buildScoreBar('Технические', scored.technicalScore, 20),
+                  _buildScoreBar('Конкуренты', scored.competitorScore, 30),
+                  _buildScoreBar('Синергия', scored.synergyScore, 20),
                 ],
               const SizedBox(height: 20),
               SizedBox(

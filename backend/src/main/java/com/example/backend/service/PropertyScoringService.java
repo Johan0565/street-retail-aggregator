@@ -32,7 +32,8 @@ public class PropertyScoringService {
 
     private static final int MAX_FINANCIAL_SCORE   = 30;
     private static final int MAX_TECHNICAL_SCORE   = 20;
-    private static final int MAX_COMPETITOR_SCORE  = 50;
+    private static final int MAX_COMPETITOR_SCORE  = 30;
+    private static final int MAX_SYNERGY_SCORE     = 20;
 
     // =========================================================================
     //  ПУБЛИЧНЫЕ МЕТОДЫ
@@ -64,22 +65,25 @@ public class PropertyScoringService {
 
     private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
                                              List<BusinessCategory> allCategories) {
-        int financial              = calculateFinancialScore(profile, property);
-        int technical              = calculateTechnicalScore(profile, property);
-        CompetitorResult compResult = calculateCompetitorScore(profile, property, allCategories);
-        int total                  = financial + technical + compResult.score();
+        int financial = calculateFinancialScore(profile, property);
+        int technical = calculateTechnicalScore(profile, property);
+        NeighborhoodResult neighborhood = analyzeNeighborhood(profile, property, allCategories);
+        int total = financial + technical + neighborhood.competitorScore() + neighborhood.synergyScore();
 
-        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}",
-                property.getId(), total, financial, technical, compResult.score());
+        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}, syn={}",
+                property.getId(), total, financial, technical,
+                neighborhood.competitorScore(), neighborhood.synergyScore());
 
         return ScoredPropertyDto.builder()
                 .property(property)
                 .totalScore(total)
                 .financialScore(financial)
                 .technicalScore(technical)
-                .competitorScore(compResult.score())
-                .directCompetitorNames(compResult.directNames())
-                .indirectCompetitorNames(compResult.indirectNames())
+                .competitorScore(neighborhood.competitorScore())
+                .synergyScore(neighborhood.synergyScore())
+                .directCompetitorNames(neighborhood.directNames())
+                .indirectCompetitorNames(neighborhood.indirectNames())
+                .synergyNeighborNames(neighborhood.synergyNames())
                 .matchLabel(resolveMatchLabel(total))
                 .matchColor(resolveMatchColor(total))
                 .build();
@@ -160,31 +164,42 @@ public class PropertyScoringService {
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 3: Анализ конкурентов через 2GIS (0-50 баллов)
+    //  КОМПОНЕНТ 3 + 4: Анализ окрестности через 2GIS
     //
-    //  Считаем прямых конкурентов (та же категория) и косвенных (та же
-    //  родительская категория). Чем больше конкурентов — тем ниже балл.
+    //  Конкуренты (0-30 баллов) — пересмотренная шкала:
+    //    Прямые  | Косвенные | Балл
+    //    --------|-----------|-----
+    //    0       | 0         | 30
+    //    0       | 1–2       | 24
+    //    0       | 3–5       | 18
+    //    0       | 6+        | 12
+    //    1       | —         | 12
+    //    2       | —         |  6
+    //    3–4     | —         |  3
+    //    5+      | —         |  0
     //
-    //  Прямые  | Косвенные | Балл
-    //  ---------|-----------|-----
-    //  0        | 0         | 50
-    //  0        | 1–2       | 40
-    //  0        | 3–5       | 30
-    //  0        | 6+        | 20
-    //  1        | —         | 20
-    //  2        | —         | 10
-    //  3–4      | —         |  5
-    //  5+       | —         |  0
+    //  Синергия (0-20 баллов) — соседство с желаемыми бизнесами:
+    //    Если в профиле задано K желаемых категорий-соседей и среди nearby-
+    //    бизнесов представлены F из K — балл = round(20 * F / K).
+    //    Если профиль не задаёт желаемых соседей — балл максимальный (20),
+    //    чтобы не штрафовать за неуказанные предпочтения.
     // =========================================================================
 
-    private record CompetitorResult(int score, List<String> directNames, List<String> indirectNames) {}
+    private record NeighborhoodResult(
+            int competitorScore,
+            List<String> directNames,
+            List<String> indirectNames,
+            int synergyScore,
+            List<String> synergyNames
+    ) {}
 
-    private CompetitorResult calculateCompetitorScore(SearchProfile profile, Property property,
-                                                       List<BusinessCategory> allCategories) {
+    private NeighborhoodResult analyzeNeighborhood(SearchProfile profile, Property property,
+                                                    List<BusinessCategory> allCategories) {
         if (profile.getBusinessCategory() == null
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
-            return new CompetitorResult(MAX_COMPETITOR_SCORE, List.of(), List.of());
+            return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
+                                          MAX_SYNERGY_SCORE, List.of());
         }
 
         int radius = profile.getSearchRadiusMeters() != null
@@ -196,13 +211,29 @@ public class PropertyScoringService {
                 ? target.getParentCategory().getId()
                 : null;
 
+        log.info("[COMP-CTX] property={} profile={} (id={}) targetCategory={} (id={}, parentId={}) keywords=[{}]",
+                property.getId(),
+                profile.getName(), profile.getId(),
+                target.getName(), target.getId(), targetParentId,
+                target.getTwoGisKeywords());
+
         List<NearbyBusiness> nearbyBusinesses = gisSearchService.getNearbyBusinesses(
                 property.getLatitude().doubleValue(),
                 property.getLongitude().doubleValue(),
                 radius);
 
+        // Множество ID желаемых категорий-соседей (синергия).
+        Set<Long> desiredNeighborIds = new HashSet<>();
+        if (profile.getDesiredNeighbors() != null) {
+            for (BusinessCategory bc : profile.getDesiredNeighbors()) {
+                desiredNeighborIds.add(bc.getId());
+            }
+        }
+
         if (nearbyBusinesses.isEmpty()) {
-            return new CompetitorResult(MAX_COMPETITOR_SCORE, List.of(), List.of());
+            int synergyEmpty = desiredNeighborIds.isEmpty() ? MAX_SYNERGY_SCORE : 0;
+            return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
+                                          synergyEmpty, List.of());
         }
 
         long direct   = 0;
@@ -210,44 +241,85 @@ public class PropertyScoringService {
         List<String> directNames   = new ArrayList<>();
         List<String> indirectNames = new ArrayList<>();
 
-        // Де-дупликация: одно заведение → максимум +1 к одному счётчику.
+        // Какие из желаемых категорий найдены и какие соседи к ним относятся.
+        Map<Long, List<String>> synergyByCategory = new LinkedHashMap<>();
+
+        // Де-дупликация: одно заведение → максимум +1 к одному счётчику (конкуренты),
+        // и не больше одной отметки на каждую desired-категорию (синергия).
         for (NearbyBusiness business : nearbyBusinesses) {
             boolean isDirect   = false;
             boolean isIndirect = false;
+            Set<Long> synergyMatchesForBusiness = new HashSet<>();
 
             for (String rubric : business.rubrics()) {
                 BusinessCategory matched = matchRubricToCategory(rubric, allCategories);
                 if (matched == null) continue;
 
-                if (matched.getId().equals(target.getId())) {
+                if (!isDirect && matched.getId().equals(target.getId())) {
                     isDirect = true;
-                    break;
                 }
-                if (targetParentId != null
+                if (!isIndirect && !isDirect
+                        && targetParentId != null
                         && matched.getParentCategory() != null
                         && matched.getParentCategory().getId().equals(targetParentId)) {
                     isIndirect = true;
+                }
+                if (desiredNeighborIds.contains(matched.getId())) {
+                    synergyMatchesForBusiness.add(matched.getId());
                 }
             }
 
             if (isDirect)        { direct++;   directNames.add(business.name()); }
             else if (isIndirect) { indirect++; indirectNames.add(business.name()); }
+
+            for (Long catId : synergyMatchesForBusiness) {
+                synergyByCategory.computeIfAbsent(catId, k -> new ArrayList<>()).add(business.name());
+            }
         }
 
-        log.info("[COMP-SCORE] property={}: прямых={} {}, косвенных={} {}, всего={}",
+        log.info("[COMP-SCORE] property={}: прямых={} {}, косвенных={} {}, всего бизнесов в радиусе={}",
                 property.getId(), direct, directNames, indirect, indirectNames, nearbyBusinesses.size());
 
-        int score;
-        if      (direct >= 5)   score = 0;
-        else if (direct >= 3)   score = 5;
-        else if (direct == 2)   score = 10;
-        else if (direct == 1)   score = 20;
-        else if (indirect >= 6) score = 20;
-        else if (indirect >= 3) score = 30;
-        else if (indirect >= 1) score = 40;
-        else                    score = MAX_COMPETITOR_SCORE;
+        if (direct == 0 && indirect == 0 && !nearbyBusinesses.isEmpty()) {
+            int sample = Math.min(5, nearbyBusinesses.size());
+            log.warn("[COMP-NO-MATCH] property={}: ни один из {} бизнесов не классифицирован. Первые {} для проверки рубрик:",
+                    property.getId(), nearbyBusinesses.size(), sample);
+            for (int i = 0; i < sample; i++) {
+                NearbyBusiness b = nearbyBusinesses.get(i);
+                log.warn("[COMP-NO-MATCH]   {} → рубрики: {}", b.name(), b.rubrics());
+            }
+        }
 
-        return new CompetitorResult(score, directNames, indirectNames);
+        // Конкурентный балл (0-30).
+        int competitorScore;
+        if      (direct >= 5)   competitorScore = 0;
+        else if (direct >= 3)   competitorScore = 3;
+        else if (direct == 2)   competitorScore = 6;
+        else if (direct == 1)   competitorScore = 12;
+        else if (indirect >= 6) competitorScore = 12;
+        else if (indirect >= 3) competitorScore = 18;
+        else if (indirect >= 1) competitorScore = 24;
+        else                    competitorScore = MAX_COMPETITOR_SCORE;
+
+        // Синергический балл (0-20).
+        int synergyScore;
+        List<String> synergyNames = new ArrayList<>();
+        if (desiredNeighborIds.isEmpty()) {
+            synergyScore = MAX_SYNERGY_SCORE;
+        } else {
+            int found = synergyByCategory.size();
+            synergyScore = (int) Math.round(MAX_SYNERGY_SCORE * (double) found / desiredNeighborIds.size());
+            for (List<String> names : synergyByCategory.values()) {
+                synergyNames.addAll(names);
+            }
+        }
+
+        log.info("[SYNERGY] property={}: желаемых соседей={}, найдено категорий={}, соседи={}, балл={}/{}",
+                property.getId(), desiredNeighborIds.size(),
+                synergyByCategory.size(), synergyNames, synergyScore, MAX_SYNERGY_SCORE);
+
+        return new NeighborhoodResult(competitorScore, directNames, indirectNames,
+                                      synergyScore, synergyNames);
     }
 
     /**

@@ -1,0 +1,22 @@
+# Overlay для локальной разработки.
+# Использование:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+#
+# Что делает:
+#   - пробрасывает порт БД 5434 -> 5432, чтобы Spring Boot мог подключаться с хоста
+#     (как было в application.properties: jdbc:postgresql://localhost:5434/...)
+#   - не запускает nginx/certbot (для разработки они не нужны)
+
+services:
+  db:
+    ports:
+      - "5434:5432"
+
+  backend:
+    profiles: ["never"]
+
+  nginx:
+    profiles: ["never"]
+
+  certbot:
+    profiles: ["never"]

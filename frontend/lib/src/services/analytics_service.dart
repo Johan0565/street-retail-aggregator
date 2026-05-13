@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../config/api_config.dart';
 
 class AnalyticsDto {
   final int totalViewsLast30Days;
@@ -44,16 +44,8 @@ class AnalyticsDto {
 }
 
 class AnalyticsService {
-  static String get _baseUrl {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8080';
-    } else {
-      return 'http://127.0.0.1:8080';
-    }
-  }
-
   Dio get _dio => Dio(BaseOptions(
-        baseUrl: _baseUrl,
+        baseUrl: ApiConfig.baseUrl,
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
       ));

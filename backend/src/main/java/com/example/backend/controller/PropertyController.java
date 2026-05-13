@@ -4,6 +4,7 @@ import com.example.backend.dto.CreatePropertyRequest;
 import com.example.backend.dto.ScoreExplainResponse;
 import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.Property;
+import com.example.backend.entity.SearchProfile;
 import com.example.backend.entity.User;
 import com.example.backend.service.OpenRouterAiService;
 import com.example.backend.service.PropertyService;
@@ -79,7 +80,8 @@ public class PropertyController {
         if (scored == null) {
             return ResponseEntity.noContent().build();
         }
-        return ResponseEntity.ok(openRouterAiService.explainScore(scored));
+        SearchProfile profile = propertyService.findActiveProfile(tenantId);
+        return ResponseEntity.ok(openRouterAiService.explainScore(scored, profile));
     }
 
     @PostMapping

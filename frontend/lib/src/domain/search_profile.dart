@@ -32,6 +32,10 @@ class SearchProfile {
   final double? centerLongitude;
   final int? searchRadiusMeters;
 
+  // Желаемые соседи (категории для синергии)
+  final List<int> desiredNeighborCategoryIds;
+  final List<String> desiredNeighborNames;
+
   final bool isActive;
   final String? createdAt;
 
@@ -55,6 +59,8 @@ class SearchProfile {
     this.centerLatitude,
     this.centerLongitude,
     this.searchRadiusMeters,
+    this.desiredNeighborCategoryIds = const [],
+    this.desiredNeighborNames = const [],
     this.isActive = true,
     this.createdAt,
   });
@@ -84,6 +90,18 @@ class SearchProfile {
       centerLatitude: (json['centerLatitude'] as num?)?.toDouble(),
       centerLongitude: (json['centerLongitude'] as num?)?.toDouble(),
       searchRadiusMeters: (json['searchRadiusMeters'] as num?)?.toInt(),
+      desiredNeighborCategoryIds: (json['desiredNeighbors'] is List)
+          ? (json['desiredNeighbors'] as List)
+              .map((e) => (e is Map ? (e['id'] as num?)?.toInt() : null))
+              .whereType<int>()
+              .toList()
+          : const [],
+      desiredNeighborNames: (json['desiredNeighbors'] is List)
+          ? (json['desiredNeighbors'] as List)
+              .map((e) => (e is Map ? e['name']?.toString() : null))
+              .whereType<String>()
+              .toList()
+          : const [],
       isActive: json['isActive'] as bool? ?? true,
       createdAt: json['createdAt']?.toString(),
     );
@@ -107,6 +125,8 @@ class SearchProfile {
         if (centerLatitude != null) 'centerLatitude': centerLatitude,
         if (centerLongitude != null) 'centerLongitude': centerLongitude,
         if (searchRadiusMeters != null) 'searchRadiusMeters': searchRadiusMeters,
+        if (desiredNeighborCategoryIds.isNotEmpty)
+          'desiredNeighborCategoryIds': desiredNeighborCategoryIds,
       };
 }
 
@@ -114,10 +134,13 @@ class SearchProfile {
 class ScoredProperty {
   final Property property;
   final int totalScore;       // 0-100
-  final int financialScore;   // 0-20
-  final int technicalScore;   // 0-40
-  final int locationScore;    // 0-25
-  final int competitorScore;  // 0-15
+  final int financialScore;   // 0-30 (площадь + бюджет)
+  final int technicalScore;   // 0-20 (тех. требования)
+  final int competitorScore;  // 0-30 (анализ конкурентов через 2GIS)
+  final int synergyScore;     // 0-20 (синергия с желаемыми соседями)
+  final List<String> directCompetitorNames;
+  final List<String> indirectCompetitorNames;
+  final List<String> synergyNeighborNames;
   final String matchLabel;
   final String matchColor;    // "green", "yellow", "red"
 
@@ -126,20 +149,30 @@ class ScoredProperty {
     required this.totalScore,
     required this.financialScore,
     required this.technicalScore,
-    required this.locationScore,
     required this.competitorScore,
+    required this.synergyScore,
     required this.matchLabel,
     required this.matchColor,
+    this.directCompetitorNames = const [],
+    this.indirectCompetitorNames = const [],
+    this.synergyNeighborNames = const [],
   });
 
   factory ScoredProperty.fromJson(Map<String, dynamic> json) {
+    List<String> parseStringList(dynamic v) => v is List
+        ? v.map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
+        : const [];
+
     return ScoredProperty(
       property: Property.fromJson(json['property'] as Map<String, dynamic>),
       totalScore: (json['totalScore'] as num?)?.toInt() ?? 0,
       financialScore: (json['financialScore'] as num?)?.toInt() ?? 0,
       technicalScore: (json['technicalScore'] as num?)?.toInt() ?? 0,
-      locationScore: (json['locationScore'] as num?)?.toInt() ?? 0,
       competitorScore: (json['competitorScore'] as num?)?.toInt() ?? 0,
+      synergyScore: (json['synergyScore'] as num?)?.toInt() ?? 0,
+      directCompetitorNames: parseStringList(json['directCompetitorNames']),
+      indirectCompetitorNames: parseStringList(json['indirectCompetitorNames']),
+      synergyNeighborNames: parseStringList(json['synergyNeighborNames']),
       matchLabel: json['matchLabel']?.toString() ?? '',
       matchColor: json['matchColor']?.toString() ?? 'red',
     );

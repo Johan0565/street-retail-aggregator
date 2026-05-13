@@ -205,6 +205,12 @@ public class PropertyService {
         return propertyScoringService.scorePropertyWithGis(activeProfiles.get(0), property);
     }
 
+    @Transactional(readOnly = true)
+    public SearchProfile findActiveProfile(Long tenantId) {
+        var profiles = searchProfileRepository.findByTenantIdAndIsActiveTrue(tenantId);
+        return profiles.isEmpty() ? null : profiles.get(0);
+    }
+
     /**
      * Получить все опубликованные помещения (общая лента)
      */

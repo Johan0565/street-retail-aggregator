@@ -2,12 +2,13 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:stomp_dart_client/stomp_dart_client.dart';
+import '../config/api_config.dart';
 import '../domain/chat_message.dart';
 import '../domain/chat_room.dart';
 
 class ChatService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'http://10.0.2.2:8080',
+    baseUrl: ApiConfig.baseUrl,
     headers: {'Content-Type': 'application/json'},
   ));
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -47,7 +48,7 @@ class ChatService {
     
     _stompClient = StompClient(
       config: StompConfig(
-        url: 'ws://10.0.2.2:8080/ws',
+        url: ApiConfig.wsUrl,
         onConnect: (StompFrame frame) {
           _stompClient?.subscribe(
             destination: '/topic/chat/$roomId',

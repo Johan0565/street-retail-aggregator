@@ -1,0 +1,39 @@
+# =========================
+# Бэкенд (Java/Spring Boot)
+# =========================
+backend/target/
+backend/build/
+backend/.gradle/
+backend/out/
+*.jar
+*.war
+
+# =========================
+# Фронтенд (Flutter/Dart)
+# =========================
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.pub-cache/
+frontend/.pub/
+frontend/.packages
+*.apk
+*.aab
+
+# =========================
+# Секреты и конфигурации
+# =========================
+.env
+*.env
+.env.*
+application-secret.properties
+
+# =========================
+# Среды разработки (IDE) и ОС
+# =========================
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

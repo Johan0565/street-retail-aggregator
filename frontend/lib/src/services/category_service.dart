@@ -1,17 +1,12 @@
-import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../config/api_config.dart';
 import '../domain/business_category.dart';
 
 
 class CategoryService {
-  static String get _baseUrl {
-    if (Platform.isAndroid) return 'http://10.0.2.2:8080/api';
-    return 'http://127.0.0.1:8080/api';
-  }
-
-  final Dio _dio = Dio(BaseOptions(baseUrl: _baseUrl));
+  final Dio _dio = Dio(BaseOptions(baseUrl: ApiConfig.apiUrl));
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   Future<List<BusinessCategory>> getCategories() async {

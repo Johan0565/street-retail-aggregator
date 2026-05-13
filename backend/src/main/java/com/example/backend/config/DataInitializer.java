@@ -2,12 +2,18 @@ package com.example.backend.config;
 
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.repository.BusinessCategoryRepository;
+import com.example.backend.service.GisRubricCatalogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Создаёт иерархию категорий бизнеса при старте приложения (идемпотентно).
@@ -21,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class DataInitializer implements CommandLineRunner {
 
     private final BusinessCategoryRepository categoryRepository;
+    private final GisRubricCatalogService gisRubricCatalogService;
 
     @Override
     @Transactional
@@ -113,9 +120,12 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     /**
-     * Находит категорию по имени или создаёт её. Всегда обновляет twoGisKeywords.
+     * Находит категорию по имени или создаёт её. Всегда обновляет twoGisKeywords:
+     * seed-слова используются как затравка для поиска по официальному каталогу
+     * рубрик 2GIS. Финальный список keywords — канонические имена 2GIS-рубрик,
+     * чьи названия содержат seed (если 2GIS недоступен — берём seed как есть).
      */
-    private BusinessCategory findOrCreate(String name, BusinessCategory parent, String keywords) {
+    private BusinessCategory findOrCreate(String name, BusinessCategory parent, String seedKeywords) {
         BusinessCategory category = categoryRepository.findByName(name).orElseGet(() -> {
             BusinessCategory newCat = BusinessCategory.builder()
                     .name(name)
@@ -124,9 +134,11 @@ public class DataInitializer implements CommandLineRunner {
             return categoryRepository.save(newCat);
         });
 
+        String finalKeywords = resolveKeywords(name, seedKeywords);
+
         boolean changed = false;
-        if (keywords != null && !keywords.equals(category.getTwoGisKeywords())) {
-            category.setTwoGisKeywords(keywords);
+        if (finalKeywords != null && !finalKeywords.equals(category.getTwoGisKeywords())) {
+            category.setTwoGisKeywords(finalKeywords);
             changed = true;
         }
         if (parent != null && category.getParentCategory() == null) {
@@ -137,5 +149,33 @@ public class DataInitializer implements CommandLineRunner {
             categoryRepository.save(category);
         }
         return category;
+    }
+
+    /**
+     * Расширяет seed-keywords до полного списка канонических имён 2GIS-рубрик.
+     * Имя категории тоже добавляется в seed, чтобы покрыть случаи когда сама
+     * категория совпадает с рубрикой 2GIS (например, «Кафе» → рубрика «Кафе»).
+     */
+    private String resolveKeywords(String categoryName, String seedKeywords) {
+        if (seedKeywords == null || seedKeywords.isBlank()) return seedKeywords;
+
+        Set<String> seeds = new LinkedHashSet<>();
+        seeds.add(categoryName.toLowerCase());
+        Arrays.stream(seedKeywords.split(",")).map(String::trim).forEach(seeds::add);
+
+        List<String> expanded = gisRubricCatalogService.expandKeywords(seeds);
+        if (expanded.isEmpty()) {
+            log.warn("[CATEGORY] '{}': 2GIS-каталог недоступен, оставляем seed: '{}'", categoryName, seedKeywords);
+            return seedKeywords;
+        }
+
+        // Объединяем canonical 2GIS-имена + seeds (на случай рубрик, которых нет в 2GIS).
+        Set<String> merged = new LinkedHashSet<>(expanded);
+        for (String s : seedKeywords.split(",")) merged.add(s.trim().toLowerCase());
+
+        String result = String.join(",", merged);
+        log.info("[CATEGORY] '{}': seed={} → итог из 2GIS-каталога ({} keywords)",
+                categoryName, seedKeywords.split(",").length, merged.size());
+        return result;
     }
 }

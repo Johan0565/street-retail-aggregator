@@ -299,6 +299,9 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
   int? _selectedCategoryId;
   String? _selectedCategoryName;
 
+  // Желаемые соседи (синергия)
+  final Set<int> _desiredNeighborIds = {};
+
   bool get _isEditing => widget.existingProfile != null;
 
   @override
@@ -325,6 +328,9 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
     _requiresWc = p.requiresWc ?? false;
     _requiresParking = p.requiresParking ?? false;
     _requiresLoadingZone = p.requiresLoadingZone ?? false;
+    _desiredNeighborIds
+      ..clear()
+      ..addAll(p.desiredNeighborCategoryIds);
   }
 
   Future<void> _loadCategories() async {
@@ -359,6 +365,8 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
       'requiresWc': _requiresWc,
       'requiresParking': _requiresParking,
       'requiresLoadingZone': _requiresLoadingZone,
+      if (_desiredNeighborIds.isNotEmpty)
+        'desiredNeighborCategoryIds': _desiredNeighborIds.toList(),
     };
 
     SearchProfile? result;
@@ -401,7 +409,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
       body: Stepper(
         currentStep: _currentStep,
         onStepContinue: () {
-          if (_currentStep < 2) {
+          if (_currentStep < 3) {
             setState(() => _currentStep++);
           } else {
             _save();
@@ -421,10 +429,10 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: _isSaving && _currentStep == 2
+                child: _isSaving && _currentStep == 3
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : Text(
-                        _currentStep == 2 ? (_isEditing ? 'Сохранить' : 'Создать') : 'Далее',
+                        _currentStep == 3 ? (_isEditing ? 'Сохранить' : 'Создать') : 'Далее',
                         style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold),
                       ),
               ),
@@ -510,7 +518,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
             title: const Text('Технические', style: TextStyle(fontWeight: FontWeight.bold)),
             subtitle: const Text('Требования к помещению'),
             isActive: _currentStep >= 2,
-            state: StepState.indexed,
+            state: _currentStep > 2 ? StepState.complete : StepState.indexed,
             content: Column(
               children: [
                 Row(children: [
@@ -525,6 +533,69 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
                 _buildSwitch('Нужен санузел в помещении', _requiresWc, (v) => setState(() => _requiresWc = v)),
                 _buildSwitch('Нужна парковка рядом', _requiresParking, (v) => setState(() => _requiresParking = v)),
                 _buildSwitch('Нужна зона разгрузки/погрузки', _requiresLoadingZone, (v) => setState(() => _requiresLoadingZone = v)),
+              ],
+            ),
+          ),
+          // ── Шаг 4: Соседи (синергия) ────────────────────────────────────
+          Step(
+            title: const Text('Соседи', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('С какими бизнесами хотите быть рядом'),
+            isActive: _currentStep >= 3,
+            state: StepState.indexed,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'Чем больше из выбранных категорий найдётся рядом — тем выше синергический балл (до 20 из 100). Если не выбрать ничего, штрафа не будет.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600], height: 1.4),
+                  ),
+                ),
+                if (_categories.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _categories
+                        .where((c) => c['id'] != _selectedCategoryId)
+                        .map((cat) {
+                      final id = cat['id'] as int;
+                      final name = cat['name'] as String;
+                      final selected = _desiredNeighborIds.contains(id);
+                      return FilterChip(
+                        label: Text(name),
+                        selected: selected,
+                        onSelected: (val) {
+                          setState(() {
+                            if (val) {
+                              _desiredNeighborIds.add(id);
+                            } else {
+                              _desiredNeighborIds.remove(id);
+                            }
+                          });
+                        },
+                        selectedColor: _primaryOrange.withValues(alpha: 0.2),
+                        checkmarkColor: _primaryOrange,
+                        backgroundColor: Colors.white,
+                        labelStyle: TextStyle(
+                          color: selected ? _primaryOrange : Colors.black87,
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(
+                            color: selected ? _primaryOrange : Colors.grey[300]!,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
               ],
             ),
           ),
