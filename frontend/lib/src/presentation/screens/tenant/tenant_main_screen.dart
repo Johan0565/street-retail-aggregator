@@ -17,10 +17,17 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
 
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
+  // Ключ для доступа к стейту "Избранное" — нужен, чтобы перезагружать
+  // список при переходе на вкладку (IndexedStack сохраняет состояние,
+  // поэтому добавленное из деталей помещения не появлялось без рестарта).
+  final GlobalKey<FavoritesScreenState> _favoritesKey = GlobalKey<FavoritesScreenState>();
+  // Ключ к стейту карты — чтобы подхватывать новые проекты поиска без перезапуска.
+  final GlobalKey<MapScreenState> _mapKey = GlobalKey<MapScreenState>();
+
   // Список экранов для каждой вкладки
-  final List<Widget> _screens = [
-    const MapScreen(),
-    const FavoritesScreen(),
+  late final List<Widget> _screens = [
+    MapScreen(key: _mapKey),
+    FavoritesScreen(key: _favoritesKey),
     const MyApplicationsScreen(),
     const SearchProfilesScreen(),
     const ProfileScreen(),
@@ -84,6 +91,17 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
         setState(() {
           _selectedIndex = index;
         });
+        // При переходе на "Избранное" обновляем список,
+        // чтобы свежедобавленные помещения были видны без перезапуска.
+        if (index == 1) {
+          _favoritesKey.currentState?.loadFavorites();
+        }
+        // При возврате на карту — подтягиваем свежий список проектов поиска,
+        // чтобы dropdown "Выбрать проект поиска" появлялся сразу после
+        // создания первого проекта (без перезапуска приложения).
+        if (index == 0) {
+          _mapKey.currentState?.reloadProfiles();
+        }
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),

@@ -11,6 +11,11 @@ public class AnalyticsDto {
     private long totalFavoritesLast30Days;
     private long totalApplications;
     private long totalUniqueMessengers;
+    private long totalApplicationsLast30Days;
     private Map<String, Long> viewsByDate;
     private Map<String, Long> favoritesByDate;
+    private Map<String, Long> applicationsByDate;
+    // Заполняется только для аналитики по конкретному помещению
+    private Long propertyId;
+    private String propertyTitle;
 }

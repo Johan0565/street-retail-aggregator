@@ -6,6 +6,7 @@ import '../../../domain/search_profile.dart';
 import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
 import '../../../services/analytics_service.dart';
+import '../../../services/image_helper.dart';
 import '../../../services/infrastructure_service.dart';
 import '../../../services/property_service.dart';
 
@@ -32,6 +33,9 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   bool _isLoadingFavorite = false;
   bool _isCheckingInitialState = true;
   Future<List<PoiDto>>? _poiFuture;
+
+  final PageController _photoController = PageController();
+  int _photoIndex = 0;
 
   // Скоринг, подгружаемый с бэкенда (когда scoredProperty не передан извне)
   ScoredProperty? _loadedScore;
@@ -283,24 +287,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                 ),
             ],
             flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                color: Colors.grey[300],
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    const Center(child: Icon(Icons.image_outlined, size: 80, color: Colors.grey)),
-                    // Градиент для читаемости кнопок сверху
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                          colors: [Colors.black.withOpacity(0.4), Colors.transparent, Colors.transparent],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              background: _buildPhotoHeader(),
             ),
           ),
 
@@ -454,6 +441,98 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       )
           : null,
     );
+  }
+
+  Widget _buildPhotoHeader() {
+    final images = widget.property.images;
+    if (images.isEmpty) {
+      return Container(
+        color: Colors.grey[300],
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const Center(child: Icon(Icons.image_outlined, size: 80, color: Colors.grey)),
+            _headerGradient(),
+          ],
+        ),
+      );
+    }
+
+    // Главное фото — первым в списке.
+    final ordered = [
+      ...images.where((i) => i.isMain),
+      ...images.where((i) => !i.isMain),
+    ];
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _photoController,
+          itemCount: ordered.length,
+          onPageChanged: (i) => setState(() => _photoIndex = i),
+          itemBuilder: (ctx, i) {
+            final url = ImageHelper.toAbsoluteUrl(ordered[i].imageUrl);
+            return Image.network(
+              url ?? '',
+              fit: BoxFit.cover,
+              loadingBuilder: (ctx, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  color: Colors.grey[200],
+                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                );
+              },
+              errorBuilder: (ctx, _, __) => Container(
+                color: Colors.grey[300],
+                child: const Center(child: Icon(Icons.broken_image_outlined, size: 60, color: Colors.grey)),
+              ),
+            );
+          },
+        ),
+        _headerGradient(),
+        if (ordered.length > 1)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(ordered.length, (i) {
+                final active = i == _photoIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: active ? 18 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: active ? Colors.white : Colors.white54,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                );
+              }),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _headerGradient() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.black.withValues(alpha: 0.4), Colors.transparent, Colors.transparent],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _photoController.dispose();
+    super.dispose();
   }
 
   // Виджет Карточки для Блоков (Стиль Домклика)

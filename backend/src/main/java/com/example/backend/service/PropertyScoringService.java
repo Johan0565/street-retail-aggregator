@@ -15,19 +15,28 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Скоринг помещений по трём компонентам (итого 0-100 баллов):
+ * Скоринг помещений по четырём компонентам (итого 0–100 баллов):
  *
- *   Финансовый мэтч   0-30  — площадь и бюджет
- *   Технический мэтч  0-20  — 8 критериев: вода, вытяжка, вход, мощность,
- *                             санузел, парковка, зона разгрузки, потолки + ремонт
- *   Конкуренты        0-50  — реальные данные 2GIS о конкурентах в радиусе
+ *   Финансовый мэтч   0–30  — площадь и бюджет
+ *   Технический мэтч  0–20  — 8 критериев + ремонт
+ *   Конкуренты        0–30  — все организации в радиусе через Overpass API
+ *   Синергия          0–20  — соседство с желаемыми категориями
+ *
+ * Источник данных о соседях — OpenStreetMap через Overpass API.
+ * Один запрос на помещение возвращает ВСЕ организации в радиусе с их
+ * OSM-тегами. Категория сматчена с организацией, если хотя бы один её
+ * "key=value"-тег ({@link BusinessCategory#getOsmTags()}) совпадает с
+ * тегами организации. Этим решена ключевая проблема предыдущих
+ * Yandex/2GIS-вариантов: прямой конкурент той же категории (аптека рядом
+ * с целевой аптекой) больше не теряется в выдаче — Overpass отдаёт все
+ * POI без лимитов на «релевантность».
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class PropertyScoringService {
 
-    private final GisSearchService gisSearchService;
+    private final OverpassPlacesService overpassPlacesService;
     private final BusinessCategoryRepository businessCategoryRepository;
 
     private static final int MAX_FINANCIAL_SCORE   = 30;
@@ -39,24 +48,19 @@ public class PropertyScoringService {
     //  ПУБЛИЧНЫЕ МЕТОДЫ
     // =========================================================================
 
-    /**
-     * Оценить и отсортировать список помещений для рекомендательного экрана.
-     * Категории загружаются один раз, 2GIS-ответы кэшируются по локации.
-     */
     public List<ScoredPropertyDto> scoreAndRankProperties(SearchProfile profile, List<Property> properties) {
         List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
+        Map<String, List<BusinessCategory>> tagIndex = buildTagIndex(allCategories);
         return properties.stream()
-                .map(p -> scoreInternal(profile, p, allCategories))
+                .map(p -> scoreInternal(profile, p, tagIndex))
                 .sorted(Comparator.comparingInt(ScoredPropertyDto::getTotalScore).reversed())
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Оценить одно помещение (используется на экране карточки объекта).
-     */
     public ScoredPropertyDto scorePropertyWithGis(SearchProfile profile, Property property) {
         List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
-        return scoreInternal(profile, property, allCategories);
+        Map<String, List<BusinessCategory>> tagIndex = buildTagIndex(allCategories);
+        return scoreInternal(profile, property, tagIndex);
     }
 
     // =========================================================================
@@ -64,10 +68,10 @@ public class PropertyScoringService {
     // =========================================================================
 
     private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
-                                             List<BusinessCategory> allCategories) {
+                                             Map<String, List<BusinessCategory>> tagIndex) {
         int financial = calculateFinancialScore(profile, property);
         int technical = calculateTechnicalScore(profile, property);
-        NeighborhoodResult neighborhood = analyzeNeighborhood(profile, property, allCategories);
+        NeighborhoodResult neighborhood = analyzeNeighborhood(profile, property, tagIndex);
         int total = financial + technical + neighborhood.competitorScore() + neighborhood.synergyScore();
 
         log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}, syn={}",
@@ -90,8 +94,7 @@ public class PropertyScoringService {
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 1: Финансовый мэтч (0-30 баллов)
-    //  Площадь (0-15) + Бюджет (0-15)
+    //  КОМПОНЕНТ 1: Финансовый мэтч (0–30 баллов)
     // =========================================================================
 
     private int calculateFinancialScore(SearchProfile profile, Property property) {
@@ -117,21 +120,7 @@ public class PropertyScoringService {
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 2: Технический мэтч (0-20 баллов)
-    //
-    //  Штрафная модель: начинаем с 20, вычитаем за несоответствия.
-    //  Штрафы за "требуемые" опции срабатывают только если арендатор явно требует.
-    //  Штраф за SHELL_AND_CORE — безусловный (объективная характеристика).
-    //
-    //  Вода (обяз.)          -4
-    //  Вытяжка (обяз.)       -4
-    //  Отд. вход (обяз.)     -3
-    //  Мощность (обяз.)      -3
-    //  Санузел (обяз.)       -3
-    //  Парковка (обяз.)      -2
-    //  Зона разгрузки (обяз.)-2
-    //  Потолки (обяз.)       -2
-    //  Черновой ремонт       -1  (всегда)
+    //  КОМПОНЕНТ 2: Технический мэтч (0–20 баллов)
     // =========================================================================
 
     private int calculateTechnicalScore(SearchProfile profile, Property property) {
@@ -157,16 +146,15 @@ public class PropertyScoringService {
                 && property.getCeilingHeight().compareTo(profile.getMinCeilingHeight()) < 0)
             score -= 2;
 
-        // Безусловный штраф за черновое состояние
         if (property.getRepairState() == RepairState.SHELL_AND_CORE) score -= 1;
 
         return Math.max(score, 0);
     }
 
     // =========================================================================
-    //  КОМПОНЕНТ 3 + 4: Анализ окрестности через 2GIS
+    //  КОМПОНЕНТ 3 + 4: Анализ окрестности через Overpass API
     //
-    //  Конкуренты (0-30 баллов) — пересмотренная шкала:
+    //  Конкуренты (0–30 баллов):
     //    Прямые  | Косвенные | Балл
     //    --------|-----------|-----
     //    0       | 0         | 30
@@ -178,11 +166,7 @@ public class PropertyScoringService {
     //    3–4     | —         |  3
     //    5+      | —         |  0
     //
-    //  Синергия (0-20 баллов) — соседство с желаемыми бизнесами:
-    //    Если в профиле задано K желаемых категорий-соседей и среди nearby-
-    //    бизнесов представлены F из K — балл = round(20 * F / K).
-    //    Если профиль не задаёт желаемых соседей — балл максимальный (20),
-    //    чтобы не штрафовать за неуказанные предпочтения.
+    //  Синергия (0–20 баллов) — round(20 * найденных_категорий / желаемых_категорий)
     // =========================================================================
 
     private record NeighborhoodResult(
@@ -194,7 +178,7 @@ public class PropertyScoringService {
     ) {}
 
     private NeighborhoodResult analyzeNeighborhood(SearchProfile profile, Property property,
-                                                    List<BusinessCategory> allCategories) {
+                                                    Map<String, List<BusinessCategory>> tagIndex) {
         if (profile.getBusinessCategory() == null
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
@@ -207,65 +191,90 @@ public class PropertyScoringService {
                 : 1000;
 
         BusinessCategory target = profile.getBusinessCategory();
+        Long targetId = target.getId();
         Long targetParentId = target.getParentCategory() != null
                 ? target.getParentCategory().getId()
                 : null;
+        // Корневая категория (например «Еда и напитки») сама не имеет osmTags,
+        // её роль — контейнер. Если арендатор выбрал корень, прямыми считаются
+        // ВСЕ подкатегории-дети этого корня (кафе+ресторан+пекарня и т.д.),
+        // а «косвенных» для такой цели не бывает.
+        boolean targetIsRoot = targetParentId == null;
+        double lat = property.getLatitude().doubleValue();
+        double lon = property.getLongitude().doubleValue();
 
-        log.info("[COMP-CTX] property={} profile={} (id={}) targetCategory={} (id={}, parentId={}) keywords=[{}]",
-                property.getId(),
-                profile.getName(), profile.getId(),
-                target.getName(), target.getId(), targetParentId,
-                target.getTwoGisKeywords());
+        log.info("[COMP-CTX] property={} profile={} (id={}) targetCategory={} (id={}, parentId={}, isRoot={}) osmTags=[{}] radius={}м",
+                property.getId(), profile.getName(), profile.getId(),
+                target.getName(), targetId, targetParentId, targetIsRoot, target.getOsmTags(), radius);
 
-        List<NearbyBusiness> nearbyBusinesses = gisSearchService.getNearbyBusinesses(
-                property.getLatitude().doubleValue(),
-                property.getLongitude().doubleValue(),
-                radius);
+        // ------- Одно обращение к Overpass за всеми соседями -------
+        List<NearbyBusiness> nearbyBusinesses = overpassPlacesService.searchNearby(lat, lon, radius);
 
-        // Множество ID желаемых категорий-соседей (синергия).
-        Set<Long> desiredNeighborIds = new HashSet<>();
-        if (profile.getDesiredNeighbors() != null) {
-            for (BusinessCategory bc : profile.getDesiredNeighbors()) {
-                desiredNeighborIds.add(bc.getId());
-            }
-        }
+        Set<Long> desiredNeighborIds = profile.getDesiredNeighbors() == null
+                ? Set.of()
+                : profile.getDesiredNeighbors().stream()
+                         .map(BusinessCategory::getId)
+                         .collect(Collectors.toSet());
 
         if (nearbyBusinesses.isEmpty()) {
             int synergyEmpty = desiredNeighborIds.isEmpty() ? MAX_SYNERGY_SCORE : 0;
+            log.warn("[COMP-EMPTY] property={}: Overpass не вернул ни одной организации " +
+                            "(target='{}', desired={}). Балл по умолчанию 30/30.",
+                    property.getId(), target.getName(), desiredNeighborIds.size());
             return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
                                           synergyEmpty, List.of());
         }
 
+        // ------- Классификация: direct / indirect / synergy -------
         long direct   = 0;
         long indirect = 0;
         List<String> directNames   = new ArrayList<>();
         List<String> indirectNames = new ArrayList<>();
-
-        // Какие из желаемых категорий найдены и какие соседи к ним относятся.
         Map<Long, List<String>> synergyByCategory = new LinkedHashMap<>();
 
-        // Де-дупликация: одно заведение → максимум +1 к одному счётчику (конкуренты),
-        // и не больше одной отметки на каждую desired-категорию (синергия).
         for (NearbyBusiness business : nearbyBusinesses) {
             boolean isDirect   = false;
             boolean isIndirect = false;
             Set<Long> synergyMatchesForBusiness = new HashSet<>();
 
+            // Собираем все категории, под которые подпадает бизнес,
+            // через индекс OSM-тегов. Один и тот же бизнес может попасть
+            // под несколько категорий — это нормально (например shop=beauty
+            // → и «Салон красоты», и «Косметология»).
+            Set<Long> matchedCatIds = new HashSet<>();
             for (String rubric : business.rubrics()) {
-                BusinessCategory matched = matchRubricToCategory(rubric, allCategories);
-                if (matched == null) continue;
+                List<BusinessCategory> cats = tagIndex.get(rubric);
+                if (cats == null) continue;
+                for (BusinessCategory c : cats) matchedCatIds.add(c.getId());
+            }
 
-                if (!isDirect && matched.getId().equals(target.getId())) {
-                    isDirect = true;
+            for (Long catId : matchedCatIds) {
+                BusinessCategory matched = findById(catId, tagIndex);
+                Long matchedParentId = (matched != null && matched.getParentCategory() != null)
+                        ? matched.getParentCategory().getId() : null;
+
+                if (!isDirect) {
+                    if (targetIsRoot) {
+                        // цель — корень: прямым считаем любую категорию,
+                        // у которой parent == target (т.е. подкатегория цели)
+                        if (targetId.equals(matchedParentId) || targetId.equals(catId)) {
+                            isDirect = true;
+                        }
+                    } else {
+                        // цель — лист: прямой == точное совпадение id
+                        if (catId.equals(targetId)) {
+                            isDirect = true;
+                        }
+                    }
                 }
-                if (!isIndirect && !isDirect
-                        && targetParentId != null
-                        && matched.getParentCategory() != null
-                        && matched.getParentCategory().getId().equals(targetParentId)) {
-                    isIndirect = true;
+                if (!isIndirect && !isDirect && !targetIsRoot && targetParentId != null) {
+                    // косвенный — sibling (общий родитель), только для листовых целей
+                    if (targetParentId.equals(matchedParentId)) {
+                        isIndirect = true;
+                    }
                 }
-                if (desiredNeighborIds.contains(matched.getId())) {
-                    synergyMatchesForBusiness.add(matched.getId());
+                if (desiredNeighborIds.contains(catId)) {
+                    synergyMatchesForBusiness.add(catId);
                 }
             }
 
@@ -282,15 +291,14 @@ public class PropertyScoringService {
 
         if (direct == 0 && indirect == 0 && !nearbyBusinesses.isEmpty()) {
             int sample = Math.min(5, nearbyBusinesses.size());
-            log.warn("[COMP-NO-MATCH] property={}: ни один из {} бизнесов не классифицирован. Первые {} для проверки рубрик:",
+            log.warn("[COMP-NO-MATCH] property={}: ни один из {} бизнесов не классифицирован. Первые {} для проверки тегов:",
                     property.getId(), nearbyBusinesses.size(), sample);
             for (int i = 0; i < sample; i++) {
                 NearbyBusiness b = nearbyBusinesses.get(i);
-                log.warn("[COMP-NO-MATCH]   {} → рубрики: {}", b.name(), b.rubrics());
+                log.warn("[COMP-NO-MATCH]   {} → теги: {}", b.name(), b.rubrics());
             }
         }
 
-        // Конкурентный балл (0-30).
         int competitorScore;
         if      (direct >= 5)   competitorScore = 0;
         else if (direct >= 3)   competitorScore = 3;
@@ -301,7 +309,6 @@ public class PropertyScoringService {
         else if (indirect >= 1) competitorScore = 24;
         else                    competitorScore = MAX_COMPETITOR_SCORE;
 
-        // Синергический балл (0-20).
         int synergyScore;
         List<String> synergyNames = new ArrayList<>();
         if (desiredNeighborIds.isEmpty()) {
@@ -322,29 +329,35 @@ public class PropertyScoringService {
                                       synergyScore, synergyNames);
     }
 
+    // =========================================================================
+    //  HELPERS: индекс OSM-тег → категории
+    // =========================================================================
+
     /**
-     * Сопоставляет рубрику 2GIS с категорией из нашего справочника.
-     * Однословные ключевые слова — word-boundary (предотвращает "бар" → "барбершоп").
-     * Многословные — substring-матч.
+     * Строит {@code Map<"key=value", List<BusinessCategory>>}, чтобы для
+     * каждой OSM-рубрики бизнеса находить совпадающие категории за O(1).
+     * Одна и та же пара ("shop=beauty") может вести к нескольким
+     * категориям (Салон красоты + Косметология) — это намеренно: оба
+     * считаются конкурентами при выборе любой из них.
      */
-    private BusinessCategory matchRubricToCategory(String rubricName, List<BusinessCategory> categories) {
-        String lowerRubric = rubricName.toLowerCase();
-        Set<String> rubricWords = new HashSet<>(
-                Arrays.asList(lowerRubric.replaceAll("[^а-яёa-z0-9\\s]", " ").trim().split("\\s+"))
-        );
-
+    private Map<String, List<BusinessCategory>> buildTagIndex(List<BusinessCategory> categories) {
+        Map<String, List<BusinessCategory>> index = new HashMap<>();
         for (BusinessCategory cat : categories) {
-            if (cat.getTwoGisKeywords() == null || cat.getTwoGisKeywords().isBlank()) continue;
+            String csv = cat.getOsmTags();
+            if (csv == null || csv.isBlank()) continue;
+            for (String raw : csv.split(",")) {
+                String tag = raw.trim().toLowerCase();
+                if (tag.isEmpty() || !tag.contains("=")) continue;
+                index.computeIfAbsent(tag, k -> new ArrayList<>()).add(cat);
+            }
+        }
+        return index;
+    }
 
-            for (String kw : cat.getTwoGisKeywords().toLowerCase().split(",")) {
-                kw = kw.trim();
-                if (kw.isEmpty()) continue;
-
-                boolean matches = kw.contains(" ")
-                        ? lowerRubric.contains(kw)
-                        : rubricWords.contains(kw);
-
-                if (matches) return cat;
+    private BusinessCategory findById(Long id, Map<String, List<BusinessCategory>> tagIndex) {
+        for (List<BusinessCategory> bucket : tagIndex.values()) {
+            for (BusinessCategory c : bucket) {
+                if (id.equals(c.getId())) return c;
             }
         }
         return null;
@@ -360,7 +373,6 @@ public class PropertyScoringService {
         return true;
     }
 
-    /** Частичный балл при выходе за диапазон не более чем на 20%. */
     private int partialScore(BigDecimal value, BigDecimal min, BigDecimal max, int maxPoints) {
         if (min != null && value.compareTo(min) < 0) {
             double ratio = value.doubleValue() / min.doubleValue();

@@ -10,4 +10,5 @@ import java.util.List;
 @Repository
 public interface PropertyViewEventRepository extends JpaRepository<PropertyViewEvent, Long> {
     List<PropertyViewEvent> findByPropertyLandlordIdAndViewTimestampAfter(Long landlordId, LocalDateTime date);
+    List<PropertyViewEvent> findByPropertyIdAndViewTimestampAfter(Long propertyId, LocalDateTime date);
 }

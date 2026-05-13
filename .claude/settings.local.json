@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del \"c:\\\\Games\\\\street-retail-aggregator\\\\backend\\\\src\\\\main\\\\java\\\\com\\\\example\\\\backend\\\\service\\\\GisSearchService.java\" \"c:\\\\Games\\\\street-retail-aggregator\\\\backend\\\\src\\\\main\\\\java\\\\com\\\\example\\\\backend\\\\service\\\\GisRubricCatalogService.java\")",
+      "Bash(./mvnw -q -DskipTests compile)",
+      "Bash(./gradlew -q compileJava)",
+      "Read(//c/Program Files/**)",
+      "Bash(where javac *)",
+      "Bash(JAVA_HOME=/c/Users/User/.jdks/ms-17.0.18 PATH=/c/Users/User/.jdks/ms-17.0.18/bin:__TRACKED_VAR__ ./gradlew -q compileJava)",
+      "Bash(JAVA_HOME=/c/oracleJdk-26 ./gradlew -q compileJava)"
+    ]
+  }
+}

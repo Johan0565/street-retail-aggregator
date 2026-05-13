@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import '../../../services/image_helper.dart';
 import '../../../services/property_service.dart';
 import 'map_picker_screen.dart';
 
@@ -11,7 +14,18 @@ class AddPropertyScreen extends StatefulWidget {
 
 class _AddPropertyScreenState extends State<AddPropertyScreen> {
   int _currentStep = 0;
-  final _formKeys = [GlobalKey<FormState>(), GlobalKey<FormState>(), GlobalKey<FormState>(), GlobalKey<FormState>()];
+  // 5 шагов: базовая, финансы, технические, контакты, фото
+  final _formKeys = [
+    GlobalKey<FormState>(),
+    GlobalKey<FormState>(),
+    GlobalKey<FormState>(),
+    GlobalKey<FormState>(),
+    GlobalKey<FormState>(),
+  ];
+
+  // Фотографии помещения (выбранные до отправки)
+  final List<File> _photos = [];
+  int _mainPhotoIndex = 0;
 
   final PropertyService _propertyService = PropertyService();
   final Color _primaryOrange = const Color(0xFFFF8C00);
@@ -23,6 +37,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   final _priceController = TextEditingController();
   final _depositController = TextEditingController();
   final _powerController = TextEditingController();
+  final _ceilingHeightController = TextEditingController();
   final _descController = TextEditingController();
   final _contactNameController = TextEditingController();
   final _contactPhoneController = TextEditingController();
@@ -46,6 +61,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   bool _hasWater = false;
   bool _hasVentilation = false;
   bool _hasSeparateEntrance = false;
+  bool _hasWc = false;
+  bool _hasParking = false;
+  bool _hasLoadingZone = false;
 
   // --- НОВЫЙ ПЕРЕКЛЮЧАТЕЛЬ ---
   bool _isOccupied = false;
@@ -58,6 +76,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   void dispose() {
     _titleController.dispose(); _addressController.dispose(); _areaController.dispose();
     _priceController.dispose(); _depositController.dispose(); _powerController.dispose();
+    _ceilingHeightController.dispose();
     _descController.dispose(); _contactNameController.dispose(); _contactPhoneController.dispose();
     _cadastralController.dispose(); // Не забываем очищать
     super.dispose();
@@ -73,7 +92,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final success = await _propertyService.createProperty(
+      final propertyId = await _propertyService.createProperty(
         title: _titleController.text.trim(),
         description: _descController.text.trim(),
         address: _addressController.text.trim(),
@@ -87,15 +106,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         utilityIncluded: _utilityIncluded,
         depositMonths: int.tryParse(_depositController.text.trim()) ?? 1,
         powerKw: int.tryParse(_powerController.text.trim()) ?? 0,
+        ceilingHeight: double.tryParse(_ceilingHeightController.text.trim().replaceAll(',', '.')),
         hasWater: _hasWater,
         hasVentilation: _hasVentilation,
         hasSeparateEntrance: _hasSeparateEntrance,
+        hasWc: _hasWc,
+        hasParking: _hasParking,
+        hasLoadingZone: _hasLoadingZone,
         repairState: _selectedRepairState,
         layout: _selectedLayout,
         contactName: _contactNameController.text.trim(),
         contactPhone: _contactPhoneController.text.trim(),
-
-        // --- ПЕРЕДАЕМ НОВЫЕ ПОЛЯ В СЕРВИС ---
         cadastralNumber: _cadastralController.text.trim().isEmpty ? null : _cadastralController.text.trim(),
         accessType: _selectedAccessType,
         heatingType: _selectedHeatingType,
@@ -103,17 +124,60 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         isOccupied: _isOccupied,
       );
 
-      if (success && mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Помещение опубликовано!'), backgroundColor: Colors.green));
-      } else {
-        throw Exception('Ошибка сервера');
+      if (propertyId == null) {
+        throw Exception('Ошибка создания объекта');
       }
+
+      // Грузим фотографии. Главное фото первым — бэк назначит isMain первой
+      // в пустом списке.
+      bool photosOk = true;
+      if (_photos.isNotEmpty) {
+        final ordered = <File>[
+          _photos[_mainPhotoIndex],
+          ..._photos.asMap().entries.where((e) => e.key != _mainPhotoIndex).map((e) => e.value),
+        ];
+        photosOk = await _propertyService.uploadPropertyImages(propertyId, ordered);
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context, true); // true — сигнал родителю, что нужно обновить список
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(photosOk
+            ? 'Помещение опубликовано!'
+            : 'Объявление создано, но фото не загрузились — добавьте позже'),
+        backgroundColor: photosOk ? Colors.green : Colors.orange,
+      ));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ошибка публикации. Проверьте данные.'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Future<void> _addPhotos() async {
+    final remaining = 10 - _photos.length;
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Максимум 10 фотографий')),
+      );
+      return;
+    }
+    final picked = await ImageHelper.pickImages(context, allowMultiple: true);
+    if (picked.isEmpty) return;
+    setState(() {
+      _photos.addAll(picked.take(remaining));
+    });
+  }
+
+  void _removePhoto(int index) {
+    setState(() {
+      _photos.removeAt(index);
+      if (_mainPhotoIndex >= _photos.length) {
+        _mainPhotoIndex = _photos.isEmpty ? 0 : _photos.length - 1;
+      } else if (_mainPhotoIndex == index && _photos.isNotEmpty) {
+        _mainPhotoIndex = 0;
+      }
+    });
   }
 
   @override
@@ -135,7 +199,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             onStepTapped: (step) => setState(() => _currentStep = step),
             onStepContinue: () {
               if (_formKeys[_currentStep].currentState!.validate()) {
-                if (_currentStep < 3) {
+                if (_currentStep < 4) {
                   setState(() => _currentStep += 1);
                 } else {
                   _submitForm();
@@ -158,9 +222,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: _isSubmitting && _currentStep == 3
+                        child: _isSubmitting && _currentStep == 4
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : Text(_currentStep == 3 ? 'Опубликовать' : 'Далее', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            : Text(_currentStep == 4 ? 'Опубликовать' : 'Далее', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       ),
                     ),
                     if (_currentStep > 0) ...[
@@ -215,7 +279,44 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                               icon: Icon(_selectedLat != null ? Icons.check : Icons.map_outlined, color: _selectedLat != null ? Colors.green : _primaryOrange, size: 30),
                               onPressed: () async {
                                 final result = await Navigator.push<Map<String, dynamic>>(context, MaterialPageRoute(builder: (context) => const MapPickerScreen()));
-                                if (result != null) setState(() { _selectedLat = result['latitude']; _selectedLon = result['longitude']; });
+                                if (result != null) {
+                                  setState(() {
+                                    _selectedLat = result['latitude'];
+                                    _selectedLon = result['longitude'];
+                                  });
+                                  final resolvedAddress = result['address'] as String?;
+                                  if (resolvedAddress != null && resolvedAddress.trim().isNotEmpty) {
+                                    // Подставляем адрес, если поле пустое или пользователь ещё ничего не вводил.
+                                    // Если поле уже заполнено вручную — не затираем.
+                                    if (_addressController.text.trim().isEmpty) {
+                                      _addressController.text = resolvedAddress;
+                                    } else {
+                                      if (!context.mounted) return;
+                                      // Спрашиваем, заменить ли уже введённый адрес
+                                      final replace = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          title: const Text('Заменить адрес?'),
+                                          content: Text('По метке определён адрес:\n\n$resolvedAddress\n\nЗаменить введённый вами?'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(ctx, false),
+                                              child: const Text('Оставить мой', style: TextStyle(color: Colors.black54)),
+                                            ),
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(ctx, true),
+                                              child: Text('Заменить', style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold)),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (replace == true) {
+                                        _addressController.text = resolvedAddress;
+                                      }
+                                    }
+                                  }
+                                }
                               },
                             ),
                           ),
@@ -255,7 +356,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   key: _formKeys[2],
                   child: Column(
                     children: [
-                      _buildTextField(controller: _powerController, label: 'Мощность (кВт)', icon: Icons.bolt, isNumber: true),
+                      Row(
+                        children: [
+                          Expanded(child: _buildTextField(controller: _powerController, label: 'Мощность (кВт)', icon: Icons.bolt, isNumber: true)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildTextField(controller: _ceilingHeightController, label: 'Высота потолков (м)', icon: Icons.height, isNumber: true, isRequired: false)),
+                        ],
+                      ),
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -282,6 +389,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                       _buildSwitch(title: 'Мокрая точка', value: _hasWater, icon: Icons.water_drop, onChanged: (v) => setState(() => _hasWater = v)),
                       _buildSwitch(title: 'Вытяжка', value: _hasVentilation, icon: Icons.air, onChanged: (v) => setState(() => _hasVentilation = v)),
                       _buildSwitch(title: 'Отдельный вход', value: _hasSeparateEntrance, icon: Icons.door_front_door, onChanged: (v) => setState(() => _hasSeparateEntrance = v)),
+                      _buildSwitch(title: 'Санузел в помещении', value: _hasWc, icon: Icons.wc, onChanged: (v) => setState(() => _hasWc = v)),
+                      _buildSwitch(title: 'Парковка рядом', value: _hasParking, icon: Icons.local_parking, onChanged: (v) => setState(() => _hasParking = v)),
+                      _buildSwitch(title: 'Зона разгрузки/погрузки', value: _hasLoadingZone, icon: Icons.local_shipping, onChanged: (v) => setState(() => _hasLoadingZone = v)),
                     ],
                   ),
                 ),
@@ -291,6 +401,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               Step(
                 title: const Text('Детали и Контакты', style: TextStyle(fontWeight: FontWeight.bold)),
                 isActive: _currentStep >= 3,
+                state: _currentStep > 3 ? StepState.complete : StepState.indexed,
                 content: Form(
                   key: _formKeys[3],
                   child: Column(
@@ -308,10 +419,106 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                   ),
                 ),
               ),
+
+              // ШАГ 5: ФОТОГРАФИИ
+              Step(
+                title: const Text('Фотографии', style: TextStyle(fontWeight: FontWeight.bold)),
+                isActive: _currentStep >= 4,
+                content: Form(
+                  key: _formKeys[4],
+                  child: _buildPhotosStep(),
+                ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPhotosStep() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Добавьте до 10 фото. Первое (с меткой «Главное») увидят в ленте.',
+          style: TextStyle(color: Colors.grey[700], fontSize: 13),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          crossAxisCount: 3,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          children: [
+            ..._photos.asMap().entries.map((entry) {
+              final index = entry.key;
+              final file = entry.value;
+              final isMain = index == _mainPhotoIndex;
+              return GestureDetector(
+                onTap: () => setState(() => _mainPhotoIndex = index),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(file, fit: BoxFit.cover),
+                    ),
+                    if (isMain)
+                      Positioned(
+                        left: 4, top: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _primaryOrange,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('Главное',
+                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    Positioned(
+                      right: 2, top: 2,
+                      child: GestureDetector(
+                        onTap: () => _removePhoto(index),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close, size: 16, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (_photos.length < 10)
+              GestureDetector(
+                onTap: _addPhotos,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                  ),
+                  child: const Center(child: Icon(Icons.add_a_photo_outlined, color: Colors.grey)),
+                ),
+              ),
+          ],
+        ),
+        if (_photos.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Фото необязательны, но без них объявление выглядит хуже.',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
+          ),
+      ],
     );
   }
 

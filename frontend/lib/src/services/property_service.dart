@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -51,10 +53,10 @@ class PropertyService {
       return [];
     }
   }
-  // Создание нового объекта недвижимости
-  // Создание нового объекта недвижимости
-  // Создание нового объекта недвижимости
-  Future<bool> createProperty({
+  // Создание нового объекта недвижимости.
+  // Возвращает id созданного объекта (или null при ошибке) —
+  // нужен для последующей загрузки фотографий.
+  Future<int?> createProperty({
     required String title,
     required String description,
     required String address,
@@ -71,9 +73,13 @@ class PropertyService {
     int? depositMonths,
     // Новые технические
     required int powerKw,
+    double? ceilingHeight,
     required bool hasWater,
     required bool hasVentilation,
     required bool hasSeparateEntrance,
+    bool hasWc = false,
+    bool hasParking = false,
+    bool hasLoadingZone = false,
     String? repairState,
     String? layout,
     String? cadastralNumber,
@@ -104,9 +110,13 @@ class PropertyService {
           'utilityIncluded': utilityIncluded,
           'depositMonths': depositMonths,
           'powerKw': powerKw,
+          'ceilingHeight': ceilingHeight,
           'hasWater': hasWater,
           'hasVentilation': hasVentilation,
           'hasSeparateEntrance': hasSeparateEntrance,
+          'hasWc': hasWc,
+          'hasParking': hasParking,
+          'hasLoadingZone': hasLoadingZone,
           'repairState': repairState,
           'layout': layout,
           'contactName': contactName,
@@ -120,13 +130,96 @@ class PropertyService {
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
 
-      return response.statusCode == 200 || response.statusCode == 201;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data;
+        if (data is Map<String, dynamic>) {
+          final raw = data['id'];
+          if (raw is num) return raw.toInt();
+        }
+      }
+      return null;
     } catch (e) {
       print('Ошибка при создании объекта: $e');
+      return null;
+    }
+  }
+
+  /// Загружает фотографии помещения. Возвращает true при успехе.
+  Future<bool> uploadPropertyImages(int propertyId, List<File> files) async {
+    if (files.isEmpty) return true;
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+
+      final formData = FormData.fromMap({
+        'files': [
+          for (final f in files)
+            await MultipartFile.fromFile(f.path, filename: f.uri.pathSegments.last),
+        ],
+      });
+
+      final response = await _dio.post(
+        '/properties/$propertyId/images',
+        data: formData,
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      print('Ошибка при загрузке фото: $e');
       return false;
     }
   }
-// Архивация (Удаление) объекта
+
+  Future<bool> deletePropertyImage(int propertyId, int imageId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.delete(
+        '/properties/$propertyId/images/$imageId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.statusCode == 204 || response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> setMainPropertyImage(int propertyId, int imageId) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+
+      if (token == null) {
+        print('Ошибка: JWT токен не найден в хранилище');
+        return false;
+      }
+
+      final response = await _dio.put(
+        '/properties/$propertyId/images/$imageId/main',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Accept': 'application/json',
+          },
+        ),
+        // Некоторые API требуют пустое тело для PUT запросов
+        data: {},
+      );
+
+      // Стандартные коды успешного обновления — 200 или 204
+      return response.statusCode == 200 || response.statusCode == 204;
+
+    } on DioException catch (e) {
+      // Выводим конкретную причину ошибки в консоль для отладки
+      print('Dio Error: ${e.response?.statusCode} - ${e.message}');
+      return false;
+    } catch (e) {
+      print('Системная ошибка: $e');
+      return false;
+    }
+  }
+
   Future<bool> deleteProperty(int propertyId) async {
     try {
       final token = await _storage.read(key: 'jwt_token');

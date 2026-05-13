@@ -23,6 +23,7 @@ public class PropertyService {
     private final BusinessCategoryRepository businessCategoryRepository;
     private final SearchProfileRepository searchProfileRepository;
     private final PropertyScoringService propertyScoringService;
+    private final AnalyticsService analyticsService;
 
     /**
      * Получить рекомендованные помещения для арендатора.
@@ -169,8 +170,11 @@ public class PropertyService {
         if (user.getFavoriteProperties() == null) {
             user.setFavoriteProperties(new java.util.HashSet<>());
         }
-        user.getFavoriteProperties().add(property);
+        boolean added = user.getFavoriteProperties().add(property);
         userRepository.save(user);
+        if (added) {
+            analyticsService.logFavoriteEvent(propertyId, tenantId);
+        }
     }
 
     @Transactional

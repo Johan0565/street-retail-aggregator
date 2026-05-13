@@ -5,6 +5,7 @@ import com.example.backend.entity.User;
 import com.example.backend.service.AnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,9 +19,22 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
 
     @GetMapping("/my-properties")
+    @PreAuthorize("hasRole('LANDLORD')")
     public ResponseEntity<AnalyticsDto> getMyAnalytics(Principal principal) {
         Long landlordId = extractUserIdFromPrincipal(principal);
         return ResponseEntity.ok(analyticsService.getLandlordAnalytics(landlordId));
+    }
+
+    @GetMapping("/property/{propertyId}")
+    @PreAuthorize("hasRole('LANDLORD')")
+    public ResponseEntity<AnalyticsDto> getPropertyAnalytics(
+            @PathVariable Long propertyId,
+            Principal principal) {
+        Long landlordId = extractUserIdFromPrincipal(principal);
+        if (!analyticsService.isOwner(propertyId, landlordId)) {
+            return ResponseEntity.status(403).build();
+        }
+        return ResponseEntity.ok(analyticsService.getPropertyAnalytics(propertyId));
     }
 
     @PostMapping("/view/{propertyId}")

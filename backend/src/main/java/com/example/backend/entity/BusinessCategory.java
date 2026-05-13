@@ -20,15 +20,20 @@ public class BusinessCategory {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
-    @JsonIgnoreProperties({"parentCategory", "subCategories", "twoGisKeywords"})
+    @JsonIgnoreProperties({"parentCategory", "subCategories", "osmTags"})
     private BusinessCategory parentCategory;
 
     @JsonIgnore
     @OneToMany(mappedBy = "parentCategory")
     private List<BusinessCategory> subCategories;
 
-    // Ключевые слова для сопоставления с рубриками 2GIS (через запятую, строчные)
-    // Пример: "кофейня,кофе,coffee"
-    @Column(name = "two_gis_keywords", columnDefinition = "TEXT")
-    private String twoGisKeywords;
+    /**
+     * OSM key=value-теги, по которым категория сопоставляется с результатами
+     * Overpass API. CSV, нижний регистр. Пример: "amenity=pharmacy,shop=chemist".
+     *
+     * Колонка БД называется search_keywords по историческим причинам
+     * (раньше тут лежали ключевые слова для Yandex Places API).
+     */
+    @Column(name = "search_keywords", columnDefinition = "TEXT")
+    private String osmTags;
 }

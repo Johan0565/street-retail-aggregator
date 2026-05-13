@@ -49,8 +49,22 @@ class _SplashScreenState extends State<SplashScreen> {
     // Ждем долю секунды для красивой анимации (не обязательно, но выглядит приятнее)
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // Проверяем, нужно ли делать автологин
-    final role = await AuthService().checkAutoLogin();
+    final auth = AuthService();
+    // Сначала пытаемся продолжить активную сессию.
+    String? role = await auth.checkAutoLogin();
+
+    // Если активный токен протух, но в списке сохранённых аккаунтов есть валидные —
+    // тихо восстанавливаем самый недавний.
+    if (role == null) {
+      final accounts = await auth.getSavedAccounts();
+      for (final acc in accounts) {
+        final resumed = await auth.resumeSavedAccount(acc.email);
+        if (resumed != null) {
+          role = resumed;
+          break;
+        }
+      }
+    }
 
     if (!mounted) return;
 

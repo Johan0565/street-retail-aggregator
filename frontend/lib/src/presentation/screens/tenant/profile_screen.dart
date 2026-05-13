@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // <-- Импорт хранилища
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../domain/user_profile.dart';
 import '../../../services/auth_service.dart';
-import '../../../services/category_service.dart';
+import '../../../services/image_helper.dart';
 import '../auth/login_screen.dart';
-import '../../../domain/business_category.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -70,8 +70,281 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _showSupportDialog() { /* ... твой код без изменений ... */ }
-  void _showAboutDialog() { /* ... твой код без изменений ... */ }
+  Future<void> _copyToClipboard(String text, String label) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label скопирован в буфер обмена'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.black87,
+      ),
+    );
+  }
+
+  void _showSupportDialog() {
+    const email = 'magomed@magomedov.online';
+    const website = 'magomedov.online';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _primaryOrange.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.support_agent, color: _primaryOrange),
+            ),
+            const SizedBox(width: 12),
+            const Text('Служба поддержки', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Свяжитесь с разработчиком, если у вас возникли вопросы или предложения:',
+              style: TextStyle(fontSize: 14, color: Colors.black54),
+            ),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () => _copyToClipboard(email, 'Email'),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.email_outlined, color: Colors.black87, size: 20),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Email', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          SelectableText(
+                            email,
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.copy, size: 16, color: Colors.grey),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: () => _copyToClipboard(website, 'Сайт'),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.public, color: Colors.black87, size: 20),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Сайт-визитка', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          SelectableText(
+                            website,
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.copy, size: 16, color: Colors.grey),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Закрыть', style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _primaryOrange.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.info_outline, color: _primaryOrange),
+            ),
+            const SizedBox(width: 12),
+            const Text('О приложении', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _primaryOrange.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.storefront, size: 48, color: _primaryOrange),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Center(
+                child: Text(
+                  'Street Retail Aggregator',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Center(
+                child: Text(
+                  'Версия 1.0.0',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Платформа, объединяющая арендаторов и арендодателей коммерческой недвижимости в формате street retail.',
+                style: TextStyle(fontSize: 14, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Возможности:',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              _buildAboutBullet('Поиск помещений на карте'),
+              _buildAboutBullet('Подбор по нише и бюджету'),
+              _buildAboutBullet('Прямая связь с владельцем'),
+              _buildAboutBullet('Избранное и история просмотров'),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              const Text(
+                '© 2026 Magomedov\nВсе права защищены',
+                style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.4),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Закрыть', style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutBullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.check_circle, size: 16, color: _primaryOrange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeAvatar(UserProfile profile) async {
+    final files = await ImageHelper.pickImages(context, allowMultiple: false);
+    if (files.isEmpty) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Загружаем аватар...'), duration: Duration(seconds: 1)),
+    );
+    final url = await _authService.uploadAvatar(files.first);
+    if (!mounted) return;
+    if (url != null) {
+      _loadProfile();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось загрузить аватар'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _deleteAvatar() async {
+    final ok = await _authService.deleteAvatar();
+    if (!mounted) return;
+    if (ok) {
+      _loadProfile();
+    }
+  }
+
+  void _showAvatarOptions(UserProfile profile) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Изменить аватар'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _changeAvatar(profile);
+              },
+            ),
+            if (profile.avatarUrl != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Удалить аватар', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteAvatar();
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void _showEditProfileSheet(UserProfile currentProfile) {
     final nameController = TextEditingController(text: currentProfile.name);
@@ -108,27 +381,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(labelText: 'Телефон', prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder()),
                   ),
-                  const SizedBox(height: 16),
-
-                  // ПОКАЗЫВАЕМ НИШУ ТОЛЬКО АРЕНДАТОРУ
-                  if (_userRole == 'TENANT') ...[
-                    FutureBuilder<List<BusinessCategory>>(
-                      future: CategoryService().getCategories(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                        final categories = snapshot.data ?? [];
-                        if (selectedCategoryId != null && !categories.any((c) => c.id == selectedCategoryId)) selectedCategoryId = null;
-
-                        return DropdownButtonFormField<int>(
-                          value: selectedCategoryId,
-                          decoration: const InputDecoration(labelText: 'Целевая ниша бизнеса', prefixIcon: Icon(Icons.storefront), border: OutlineInputBorder()),
-                          items: categories.map((category) => DropdownMenuItem<int>(value: category.id, child: Text(category.name))).toList(),
-                          onChanged: (value) => setStateSheet(() => selectedCategoryId = value),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+                  const SizedBox(height: 24),
 
                   SizedBox(
                     width: double.infinity,
@@ -187,14 +440,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Column(
                     children: [
-                      // КРАСИВАЯ АВАТАРКА ПО РОЛЯМ
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Colors.transparent,
-                        backgroundImage: AssetImage(
-                            _userRole == 'LANDLORD' ? 'assets/landlord.png' : 'assets/tenant.png'
-                        ),
-                      ),
+                      // АВАТАРКА (сетевая, с тапом для смены)
+                      _buildAvatar(profile),
                       const SizedBox(height: 16),
                       Text(profile.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                       const SizedBox(height: 8),
@@ -224,11 +471,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     child: Column(
                       children: [
-                        // ПОКАЗЫВАЕМ НИШУ ТОЛЬКО АРЕНДАТОРУ
-                        if (_userRole == 'TENANT') ...[
-                          _buildDataRow(Icons.storefront_outlined, 'Ниша', profile.businessCategory),
-                          const Divider(height: 1, indent: 56),
-                        ],
                         _buildDataRow(Icons.phone_outlined, 'Телефон', profile.phone),
                         const Divider(height: 1, indent: 56),
                         _buildDataRow(Icons.numbers, 'ИНН', profile.inn),
@@ -317,6 +559,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildAvatar(UserProfile profile) {
+    final remoteUrl = ImageHelper.toAbsoluteUrl(profile.avatarUrl);
+    final fallback = AssetImage(
+      _userRole == 'LANDLORD' ? 'assets/landlord.png' : 'assets/tenant.png',
+    );
+
+    return GestureDetector(
+      onTap: () => _showAvatarOptions(profile),
+      child: Stack(
+        children: [
+          CircleAvatar(
+            radius: 50,
+            backgroundColor: Colors.grey[200],
+            backgroundImage: remoteUrl != null
+                ? NetworkImage(remoteUrl) as ImageProvider
+                : fallback,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _primaryOrange,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -21,15 +21,71 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   // Контроллеры для поиска
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
+  Timer? _reverseGeocodeDebounce;
 
   List<SuggestItem> _suggestions = [];
   bool _isSearching = false;
+
+  // Текущий адрес метки (обратное геокодирование)
+  String? _currentAddress;
+  bool _isResolvingAddress = false;
 
   @override
   void dispose() {
     _searchController.dispose();
     _debounceTimer?.cancel();
+    _reverseGeocodeDebounce?.cancel();
     super.dispose();
+  }
+
+  // ОБРАТНОЕ ГЕОКОДИРОВАНИЕ: по координатам -> адрес
+  Future<void> _reverseGeocode(Point point) async {
+    if (!mounted) return;
+    setState(() => _isResolvingAddress = true);
+
+    try {
+      final searchTuple = await YandexSearch.searchByPoint(
+        point: point,
+        zoom: 17,
+        searchOptions: const SearchOptions(
+          searchType: SearchType.geo,
+          geometry: false,
+        ),
+      );
+      final result = await searchTuple.$2;
+
+      String? address;
+      if (result != null && result.items != null && result.items!.isNotEmpty) {
+        final topItem = result.items!.first;
+        // 1) Полный форматированный адрес (приоритет — на русском)
+        address = topItem.toponymMetadata?.address.formattedAddress;
+        // 2) Фоллбек на имя топонима
+        address ??= topItem.name;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _currentAddress = (address != null && address.trim().isNotEmpty)
+            ? address.trim()
+            : null;
+        _isResolvingAddress = false;
+      });
+    } catch (e) {
+      debugPrint('Ошибка обратного геокодирования: $e');
+      if (mounted) {
+        setState(() {
+          _currentAddress = null;
+          _isResolvingAddress = false;
+        });
+      }
+    }
+  }
+
+  void _scheduleReverseGeocode(Point point) {
+    _reverseGeocodeDebounce?.cancel();
+    _reverseGeocodeDebounce = Timer(const Duration(milliseconds: 400), () {
+      _reverseGeocode(point);
+    });
   }
 
 
@@ -180,6 +236,9 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                 _currentCameraPosition = cameraPosition.target;
                 _isMoving = !finished;
               });
+              if (finished) {
+                _scheduleReverseGeocode(cameraPosition.target);
+              }
             },
           ),
 
@@ -276,19 +335,62 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              child: ElevatedButton(
-                onPressed: _isMoving ? null : () {
-                  Navigator.pop(context, {
-                    'latitude': _currentCameraPosition.latitude,
-                    'longitude': _currentCameraPosition.longitude,
-                  });
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Сохранить координаты', style: TextStyle(color: Colors.white, fontSize: 16)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.location_on, color: _primaryOrange, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _isResolvingAddress
+                            ? Row(
+                                children: const [
+                                  SizedBox(
+                                    height: 14,
+                                    width: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text('Определяем адрес...',
+                                      style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                ],
+                              )
+                            : Text(
+                                _currentAddress ?? 'Передвиньте карту, чтобы выбрать точку',
+                                style: TextStyle(
+                                  color: _currentAddress != null ? Colors.black87 : Colors.grey,
+                                  fontSize: 13,
+                                  fontWeight: _currentAddress != null
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isMoving ? null : () {
+                        Navigator.pop(context, {
+                          'latitude': _currentCameraPosition.latitude,
+                          'longitude': _currentCameraPosition.longitude,
+                          'address': _currentAddress,
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Сохранить координаты', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

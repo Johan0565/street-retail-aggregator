@@ -9,11 +9,16 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class RestClientConfig {
 
+    /**
+     * RestClient для Overpass API (OpenStreetMap). Запросы могут быть
+     * чуть тяжелее обычных REST-вызовов: сервер Overpass иногда отвечает
+     * 5–10 сек при высокой нагрузке, поэтому read timeout щедрый.
+     */
     @Bean
-    public RestClient gisRestClient() {
+    public RestClient overpassRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5_000);
-        factory.setReadTimeout(10_000);
+        factory.setReadTimeout(30_000);
         return RestClient.builder()
                 .requestFactory(factory)
                 .build();

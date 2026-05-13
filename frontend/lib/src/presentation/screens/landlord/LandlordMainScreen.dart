@@ -18,9 +18,14 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
   int _selectedIndex = 0;
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
-  final List<Widget> _screens = [
+  // Ключ для доступа к стейту "Мои объекты" — нужен,
+  // чтобы обновить список после добавления нового помещения
+  // или при переключении на эту вкладку (IndexedStack сохраняет состояние).
+  final GlobalKey<MyPropertiesScreenState> _myPropertiesKey = GlobalKey<MyPropertiesScreenState>();
+
+  late final List<Widget> _screens = [
     const MapScreen(isLandlordMode: true),
-    const MyPropertiesScreen(),
+    MyPropertiesScreen(key: _myPropertiesKey),
     const IncomingApplicationsScreen(),
     const ProfileScreen(),
   ];
@@ -97,13 +102,16 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
     );
   }
 
-  void _openAddPropertyScreen() {
-    Navigator.of(context).push(
+  void _openAddPropertyScreen() async {
+    final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => const AddPropertyScreen(),
       ),
     );
+    if (created == true) {
+      _myPropertiesKey.currentState?.loadProperties();
+    }
   }
 
   Widget _buildNavItem({
@@ -119,6 +127,11 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
         setState(() {
           _selectedIndex = index;
         });
+        // При переходе на "Мои объекты" обновляем список,
+        // чтобы свежедобавленные/удалённые помещения сразу были видны.
+        if (index == 1) {
+          _myPropertiesKey.currentState?.loadProperties();
+        }
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),

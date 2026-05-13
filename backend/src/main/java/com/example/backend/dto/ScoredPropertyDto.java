@@ -20,7 +20,7 @@ public class ScoredPropertyDto {
 
     private int financialScore;   // 0-30 (площадь + бюджет)
     private int technicalScore;   // 0-20 (вода, вытяжка, кВт, вход)
-    private int competitorScore;  // 0-30 (анализ конкурентов через 2GIS)
+    private int competitorScore;  // 0-30 (анализ конкурентов через Overpass API / OSM)
     private int synergyScore;     // 0-20 (синергия с желаемыми соседями)
 
     @Builder.Default

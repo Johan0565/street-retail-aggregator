@@ -2,7 +2,6 @@ package com.example.backend.config;
 
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.repository.BusinessCategoryRepository;
-import com.example.backend.service.GisRubricCatalogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -10,15 +9,14 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-
 /**
  * Создаёт иерархию категорий бизнеса при старте приложения (идемпотентно).
- * Каждой категории присваивается список ключевых слов (twoGisKeywords)
- * для сопоставления с рубриками 2GIS Places API.
+ * Каждой категории присваивается список OSM-тегов в формате "key=value"
+ * (CSV), по которым она будет сматчена с результатами Overpass API.
+ *
+ * Источник тегов — OpenStreetMap Wiki (https://wiki.openstreetmap.org/wiki/Map_features).
+ * В России теги ставятся аккуратно: pharmacy/cafe/restaurant/clothes/etc.
+ * почти всегда совпадают с типом заведения.
  */
 @Component
 @RequiredArgsConstructor
@@ -27,7 +25,6 @@ import java.util.Set;
 public class DataInitializer implements CommandLineRunner {
 
     private final BusinessCategoryRepository categoryRepository;
-    private final GisRubricCatalogService gisRubricCatalogService;
 
     @Override
     @Transactional
@@ -40,92 +37,89 @@ public class DataInitializer implements CommandLineRunner {
         BusinessCategory food = findOrCreate("Еда и напитки", null, null);
 
         findOrCreate("Продуктовый магазин", food,
-                "продукты,супермаркет,гастроном,минимаркет,универсам,продуктовый магазин,магазин продуктов,продукты питания,бакалея,гипермаркет");
+                "shop=supermarket,shop=convenience,shop=grocery,shop=greengrocer,shop=general");
         findOrCreate("Кофейня", food,
-                "кофейня,кофе,coffee shop,кофе-бар");
+                "amenity=cafe,shop=coffee");
         findOrCreate("Ресторан", food,
-                "ресторан,restaurant,трактир,лаундж,банкетный зал");
+                "amenity=restaurant");
         findOrCreate("Кафе", food,
-                "кафе,бистро,столовая,кафетерий,чайхана,хинкальная,блинная,пельменная,чебуречная,шашлычная,пышечная,кулинария,закусочная,антикафе,тайм-кафе,гастропаб,корнер,фуд-корт,пиццерия,суши-бар,общественное питание");
+                "amenity=cafe,amenity=food_court,amenity=ice_cream");
         findOrCreate("Пекарня", food,
-                "пекарня,булочная,хлебобулочные изделия");
+                "shop=bakery,shop=pastry");
         findOrCreate("Кондитерская", food,
-                "кондитерская,торты на заказ,сладости,десерты");
+                "shop=confectionery,shop=chocolate,shop=pastry");
         findOrCreate("Фастфуд", food,
-                "фастфуд,быстрое питание,бургер,пиццерия,суши,роллы,шаурма,стрит-фуд");
+                "amenity=fast_food");
         findOrCreate("Бар", food,
-                "бар,паб,пивной бар,коктейльный бар,ночной клуб,рюмочная,караоке,лаундж-бар");
+                "amenity=bar,amenity=pub,amenity=nightclub,amenity=biergarten");
 
         // ── Красота и здоровье ───────────────────────────────────────────────
         BusinessCategory beauty = findOrCreate("Красота и здоровье", null, null);
 
         findOrCreate("Аптека", beauty,
-                "аптека,аптечный пункт,фармация,оптика,линзы,очки");
+                "amenity=pharmacy,healthcare=pharmacy,shop=chemist");
         findOrCreate("Парикмахерская", beauty,
-                "парикмахерская,барбершоп,студия стрижки,мужская стрижка,детская стрижка");
+                "shop=hairdresser,craft=hairdresser,shop=hairdresser_supply");
         findOrCreate("Салон красоты", beauty,
-                "салон красоты,beauty studio,студия красоты,маникюр,педикюр,nail,ногтевой сервис,nail studio,косметология,спа,spa,массаж,уход за кожей");
+                "shop=beauty,shop=cosmetics,shop=perfumery");
         findOrCreate("Маникюр и педикюр", beauty,
-                "маникюр,педикюр,ногтевой сервис,nail studio,nail,покрытие ногтей");
+                "shop=nails,shop=beauty");
         findOrCreate("Косметология", beauty,
-                "косметология,спа,spa,массаж,уход за кожей,эпиляция,лазерная эпиляция,солярий");
+                "shop=beauty,shop=cosmetics,shop=massage,healthcare=cosmetic_surgery");
         findOrCreate("Медицинский центр", beauty,
-                "медицинский центр,клиника,медицина,врач,диагностика");
+                "amenity=clinic,amenity=doctors,amenity=dentist,healthcare=clinic," +
+                "healthcare=doctor,healthcare=centre,healthcare=hospital,healthcare=dentist");
         findOrCreate("Оптика", beauty,
-                "оптика,магазин очков,линзы,очки");
+                "shop=optician,healthcare=optometrist");
 
         // ── Товары ───────────────────────────────────────────────────────────
         BusinessCategory goods = findOrCreate("Товары", null, null);
 
         findOrCreate("Одежда", goods,
-                "магазин одежды,одежда,бутик,шоурум,женская одежда,мужская одежда,детская одежда,мода,fashion");
+                "shop=clothes,shop=boutique,shop=fashion,shop=fashion_accessories");
         findOrCreate("Обувь", goods,
-                "магазин обуви,обувной магазин,обувь,кроссовки,кожаная обувь");
+                "shop=shoes,shop=boots");
         findOrCreate("Ювелирный магазин", goods,
-                "ювелирный магазин,украшения,золото,бижутерия,ювелирные изделия");
+                "shop=jewelry,shop=jewellery,shop=watches");
         findOrCreate("Цветочный магазин", goods,
-                "цветочный магазин,цветы,флористика,флорист");
+                "shop=florist,shop=garden_centre");
         findOrCreate("Зоомагазин", goods,
-                "зоомагазин,зоотовары,корм для животных,ветеринарные товары");
+                "shop=pet,shop=pet_grooming,amenity=veterinary");
         findOrCreate("Спорттовары", goods,
-                "спортивный магазин,спорттовары,спортивное питание");
+                "shop=sports,shop=outdoor,shop=bicycle,shop=hunting,shop=fishing,shop=ski");
         findOrCreate("Детские товары", goods,
-                "детские товары,игрушки,детский магазин");
+                "shop=baby_goods,shop=toys,shop=kids,shop=children");
 
         // ── Сервис и услуги ──────────────────────────────────────────────────
         BusinessCategory service = findOrCreate("Сервис и услуги", null, null);
 
         findOrCreate("ПВЗ", service,
-                "пункт выдачи,пвз,wildberries,ozon,сдэк,cdek,boxberry,яндекс маркет");
+                "shop=parcel_locker,amenity=parcel_locker,amenity=post_office," +
+                "office=courier,amenity=post_depot");
         findOrCreate("Банк", service,
-                "банк,отделение банка,банковский офис");
+                "amenity=bank,office=financial,office=insurance");
         findOrCreate("Химчистка", service,
-                "химчистка,прачечная,ремонт одежды");
+                "shop=dry_cleaning,shop=laundry,shop=tailor,craft=tailor,craft=dressmaker");
         findOrCreate("Ремонт электроники", service,
-                "ремонт телефонов,ремонт электроники,сервисный центр,ремонт смартфонов");
+                "shop=mobile_phone,shop=electronics,craft=electronics_repair,craft=phone_repair");
         findOrCreate("Туристическое агентство", service,
-                "туристическое агентство,туризм,туры,путёвки");
+                "office=travel_agent,shop=travel_agency,tourism=information");
 
         // ── Образование и развитие ───────────────────────────────────────────
         BusinessCategory edu = findOrCreate("Образование и развитие", null, null);
 
         findOrCreate("Детский центр", edu,
-                "детский центр,развивающий центр,дошкольное образование");
+                "amenity=kindergarten,amenity=childcare,leisure=playground");
         findOrCreate("Учебный центр", edu,
-                "учебный центр,курсы,образование,репетитор,языковая школа");
+                "amenity=school,amenity=college,amenity=university,amenity=language_school," +
+                "amenity=driving_school,amenity=training,office=educational_institution");
         findOrCreate("Фитнес-клуб", edu,
-                "фитнес-клуб,тренажерный зал,спортзал,gym,фитнес");
+                "leisure=fitness_centre,leisure=sports_centre,leisure=dance,sport=fitness");
 
-        log.info("Категории бизнеса инициализированы.");
+        log.info("Категории бизнеса инициализированы (OSM-теги Overpass).");
     }
 
-    /**
-     * Находит категорию по имени или создаёт её. Всегда обновляет twoGisKeywords:
-     * seed-слова используются как затравка для поиска по официальному каталогу
-     * рубрик 2GIS. Финальный список keywords — канонические имена 2GIS-рубрик,
-     * чьи названия содержат seed (если 2GIS недоступен — берём seed как есть).
-     */
-    private BusinessCategory findOrCreate(String name, BusinessCategory parent, String seedKeywords) {
+    private BusinessCategory findOrCreate(String name, BusinessCategory parent, String osmTags) {
         BusinessCategory category = categoryRepository.findByName(name).orElseGet(() -> {
             BusinessCategory newCat = BusinessCategory.builder()
                     .name(name)
@@ -134,11 +128,9 @@ public class DataInitializer implements CommandLineRunner {
             return categoryRepository.save(newCat);
         });
 
-        String finalKeywords = resolveKeywords(name, seedKeywords);
-
         boolean changed = false;
-        if (finalKeywords != null && !finalKeywords.equals(category.getTwoGisKeywords())) {
-            category.setTwoGisKeywords(finalKeywords);
+        if (osmTags != null && !osmTags.equals(category.getOsmTags())) {
+            category.setOsmTags(osmTags);
             changed = true;
         }
         if (parent != null && category.getParentCategory() == null) {
@@ -149,33 +141,5 @@ public class DataInitializer implements CommandLineRunner {
             categoryRepository.save(category);
         }
         return category;
-    }
-
-    /**
-     * Расширяет seed-keywords до полного списка канонических имён 2GIS-рубрик.
-     * Имя категории тоже добавляется в seed, чтобы покрыть случаи когда сама
-     * категория совпадает с рубрикой 2GIS (например, «Кафе» → рубрика «Кафе»).
-     */
-    private String resolveKeywords(String categoryName, String seedKeywords) {
-        if (seedKeywords == null || seedKeywords.isBlank()) return seedKeywords;
-
-        Set<String> seeds = new LinkedHashSet<>();
-        seeds.add(categoryName.toLowerCase());
-        Arrays.stream(seedKeywords.split(",")).map(String::trim).forEach(seeds::add);
-
-        List<String> expanded = gisRubricCatalogService.expandKeywords(seeds);
-        if (expanded.isEmpty()) {
-            log.warn("[CATEGORY] '{}': 2GIS-каталог недоступен, оставляем seed: '{}'", categoryName, seedKeywords);
-            return seedKeywords;
-        }
-
-        // Объединяем canonical 2GIS-имена + seeds (на случай рубрик, которых нет в 2GIS).
-        Set<String> merged = new LinkedHashSet<>(expanded);
-        for (String s : seedKeywords.split(",")) merged.add(s.trim().toLowerCase());
-
-        String result = String.join(",", merged);
-        log.info("[CATEGORY] '{}': seed={} → итог из 2GIS-каталога ({} keywords)",
-                categoryName, seedKeywords.split(",").length, merged.size());
-        return result;
     }
 }

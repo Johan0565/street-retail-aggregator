@@ -27,4 +27,7 @@ public class LandlordProfile {
 
     @Column(name = "is_verified")
     private Boolean isVerified;
+
+    @Transient
+    private String avatarUrl;
 }

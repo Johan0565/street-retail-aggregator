@@ -1,10 +1,12 @@
 package com.example.backend.service;
 
 import com.example.backend.dto.AnalyticsDto;
+import com.example.backend.entity.Application;
 import com.example.backend.entity.FavoriteEvent;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.PropertyViewEvent;
 import com.example.backend.entity.User;
+import com.example.backend.entity.enums.PropertyStatus;
 import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.ChatRoomRepository;
 import com.example.backend.repository.FavoriteEventRepository;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class AnalyticsService {
+
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final PropertyViewEventRepository propertyViewEventRepository;
     private final FavoriteEventRepository favoriteEventRepository;
@@ -63,45 +67,110 @@ public class AnalyticsService {
         favoriteEventRepository.save(event);
     }
 
+    /**
+     * Сводная аналитика по всем НЕ архивным помещениям лендлорда за 30 дней.
+     */
     public AnalyticsDto getLandlordAnalytics(Long landlordId) {
         LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-        // Просмотры
         List<PropertyViewEvent> recentViews = propertyViewEventRepository
-                .findByPropertyLandlordIdAndViewTimestampAfter(landlordId, thirtyDaysAgo);
-        Map<String, Long> viewsByDate = recentViews.stream()
-                .collect(Collectors.groupingBy(
-                        e -> e.getViewTimestamp().format(formatter),
-                        Collectors.counting()
-                ));
+                .findByPropertyLandlordIdAndViewTimestampAfter(landlordId, thirtyDaysAgo)
+                .stream()
+                .filter(e -> isNotArchived(e.getProperty()))
+                .collect(Collectors.toList());
 
-        // Лайки (избранное)
         List<FavoriteEvent> recentFavorites = favoriteEventRepository
-                .findByPropertyLandlordIdAndCreatedAtAfter(landlordId, thirtyDaysAgo);
-        Map<String, Long> favoritesByDate = recentFavorites.stream()
-                .collect(Collectors.groupingBy(
-                        e -> e.getCreatedAt().format(formatter),
-                        Collectors.counting()
-                ));
+                .findByPropertyLandlordIdAndCreatedAtAfter(landlordId, thirtyDaysAgo)
+                .stream()
+                .filter(e -> isNotArchived(e.getProperty()))
+                .collect(Collectors.toList());
 
-        // Заявки
-        List<Property> properties = propertyRepository.findByLandlordId(landlordId);
+        List<Application> recentApps = applicationRepository
+                .findByProperty_LandlordIdAndCreatedAtAfter(landlordId, thirtyDaysAgo)
+                .stream()
+                .filter(a -> isNotArchived(a.getProperty()))
+                .collect(Collectors.toList());
+
+        // Все заявки за всё время (по неархивным помещениям)
+        List<Property> activeProperties = propertyRepository.findByLandlordId(landlordId).stream()
+                .filter(this::isNotArchived)
+                .collect(Collectors.toList());
         long totalApplications = 0;
-        for (Property p : properties) {
+        for (Property p : activeProperties) {
             totalApplications += applicationRepository.findByPropertyId(p.getId()).size();
         }
 
-        // Уникальные арендаторы, написавшие сообщения
         long totalUniqueMessengers = chatRoomRepository.countDistinctTenantsByLandlordId(landlordId);
 
         return AnalyticsDto.builder()
                 .totalViewsLast30Days(recentViews.size())
                 .totalFavoritesLast30Days(recentFavorites.size())
                 .totalApplications(totalApplications)
+                .totalApplicationsLast30Days(recentApps.size())
                 .totalUniqueMessengers(totalUniqueMessengers)
-                .viewsByDate(viewsByDate)
-                .favoritesByDate(favoritesByDate)
+                .viewsByDate(groupViewsByDate(recentViews))
+                .favoritesByDate(groupFavoritesByDate(recentFavorites))
+                .applicationsByDate(groupApplicationsByDate(recentApps))
                 .build();
+    }
+
+    /**
+     * Аналитика по конкретному помещению за 30 дней.
+     * Проверка владельца — на уровне контроллера.
+     */
+    public AnalyticsDto getPropertyAnalytics(Long propertyId) {
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
+
+        LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
+
+        List<PropertyViewEvent> views = propertyViewEventRepository
+                .findByPropertyIdAndViewTimestampAfter(propertyId, thirtyDaysAgo);
+        List<FavoriteEvent> favorites = favoriteEventRepository
+                .findByPropertyIdAndCreatedAtAfter(propertyId, thirtyDaysAgo);
+        List<Application> recentApps = applicationRepository
+                .findByPropertyIdAndCreatedAtAfter(propertyId, thirtyDaysAgo);
+        long totalApplications = applicationRepository.findByPropertyId(propertyId).size();
+
+        return AnalyticsDto.builder()
+                .totalViewsLast30Days(views.size())
+                .totalFavoritesLast30Days(favorites.size())
+                .totalApplications(totalApplications)
+                .totalApplicationsLast30Days(recentApps.size())
+                .totalUniqueMessengers(0L) // на уровне одного помещения не считаем
+                .viewsByDate(groupViewsByDate(views))
+                .favoritesByDate(groupFavoritesByDate(favorites))
+                .applicationsByDate(groupApplicationsByDate(recentApps))
+                .propertyId(propertyId)
+                .propertyTitle(property.getTitle())
+                .build();
+    }
+
+    public boolean isOwner(Long propertyId, Long landlordId) {
+        return propertyRepository.findById(propertyId)
+                .map(p -> p.getLandlord() != null && landlordId.equals(p.getLandlord().getId()))
+                .orElse(false);
+    }
+
+    private boolean isNotArchived(Property property) {
+        return property != null && property.getStatus() != PropertyStatus.ARCHIVED;
+    }
+
+    private Map<String, Long> groupViewsByDate(List<PropertyViewEvent> events) {
+        return events.stream().collect(Collectors.groupingBy(
+                e -> e.getViewTimestamp().format(DATE_FORMATTER),
+                Collectors.counting()));
+    }
+
+    private Map<String, Long> groupFavoritesByDate(List<FavoriteEvent> events) {
+        return events.stream().collect(Collectors.groupingBy(
+                e -> e.getCreatedAt().format(DATE_FORMATTER),
+                Collectors.counting()));
+    }
+
+    private Map<String, Long> groupApplicationsByDate(List<Application> apps) {
+        return apps.stream().collect(Collectors.groupingBy(
+                a -> a.getCreatedAt().format(DATE_FORMATTER),
+                Collectors.counting()));
     }
 }

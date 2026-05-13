@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import '../../../domain/property.dart';
@@ -14,10 +15,10 @@ class MapScreen extends StatefulWidget {
   const MapScreen({super.key, this.isLandlordMode = false});
 
   @override
-  State<MapScreen> createState() => _MapScreenState();
+  State<MapScreen> createState() => MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class MapScreenState extends State<MapScreen> {
   late YandexMapController mapController;
   final PropertyService _propertyService = PropertyService();
   final SearchProfileService _scoringService = SearchProfileService();
@@ -32,6 +33,13 @@ class _MapScreenState extends State<MapScreen> {
   Map<int, ScoredProperty> _scoreCache = {};
   List<Property> _allProperties = [];
   PropertyFilter _activeFilter = PropertyFilter.empty;
+
+  // Поиск адреса
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  List<SuggestItem> _searchSuggestions = [];
+  bool _isSearchingAddress = false;
+  bool _mapControllerReady = false;
 
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
@@ -6682,6 +6690,135 @@ class _MapScreenState extends State<MapScreen> {
     _loadProperties();
   }
 
+  // Публичный метод — вызывается родительским экраном при возврате
+  // на вкладку карты, чтобы подхватить только что созданные проекты поиска
+  // без перезапуска приложения.
+  Future<void> reloadProfiles() async {
+    if (widget.isLandlordMode) return;
+    final profiles = await _scoringService.getMyProfiles();
+    if (!mounted) return;
+    setState(() {
+      _myProfiles = profiles;
+      // Если активный профиль удалили из списка — сбрасываем выбор.
+      if (_activeProfile != null &&
+          !profiles.any((p) => p.id == _activeProfile!.id)) {
+        _activeProfile = null;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  // ── ПОИСК АДРЕСА (для верхней панели карты арендатора) ─────────────────
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _searchSuggestions = [];
+        _isSearchingAddress = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!_mapControllerReady) return;
+      setState(() => _isSearchingAddress = true);
+      try {
+        final region = await mapController.getVisibleRegion();
+        final suggestTuple = await YandexSuggest.getSuggestions(
+          text: trimmed,
+          boundingBox: BoundingBox(
+            southWest: region.bottomLeft,
+            northEast: region.topRight,
+          ),
+          suggestOptions: const SuggestOptions(
+            suggestType: SuggestType.geo,
+            suggestWords: true,
+          ),
+        );
+        final result = await suggestTuple.$2;
+        if (!mounted) return;
+        setState(() {
+          _searchSuggestions = result.items ?? [];
+          _isSearchingAddress = false;
+        });
+      } catch (e) {
+        debugPrint('Ошибка Suggest на карте: $e');
+        if (mounted) {
+          setState(() {
+            _searchSuggestions = [];
+            _isSearchingAddress = false;
+          });
+        }
+      }
+    });
+  }
+
+  Future<void> _onSuggestionTapped(SuggestItem item) async {
+    FocusScope.of(context).unfocus();
+    final fullAddress = '${item.title} ${item.subtitle ?? ''}'.trim();
+    setState(() {
+      _searchController.text = item.title;
+      _searchSuggestions = [];
+    });
+    await _performAddressSearch(fullAddress);
+  }
+
+  Future<void> _performAddressSearch(String query) async {
+    if (query.trim().isEmpty || !_mapControllerReady) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _searchSuggestions = [];
+      _isSearchingAddress = true;
+    });
+
+    try {
+      final searchTuple = await YandexSearch.searchByText(
+        searchText: query,
+        geometry: Geometry.fromBoundingBox(
+          const BoundingBox(
+            southWest: Point(latitude: -89, longitude: -180),
+            northEast: Point(latitude: 89, longitude: 180),
+          ),
+        ),
+        searchOptions: const SearchOptions(searchType: SearchType.geo),
+      );
+      final result = await searchTuple.$2;
+
+      Point? target;
+      if (result.items != null && result.items!.isNotEmpty) {
+        final top = result.items!.first;
+        target = top.toponymMetadata?.balloonPoint ??
+            (top.geometry.isNotEmpty ? top.geometry.first.point : null);
+      }
+
+      if (target != null) {
+        await mapController.moveCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: target, zoom: 16),
+          ),
+          animation: const MapAnimation(
+            type: MapAnimationType.smooth,
+            duration: 1.2,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Адрес не найден. Уточните запрос.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Ошибка поиска адреса: $e');
+    } finally {
+      if (mounted) setState(() => _isSearchingAddress = false);
+    }
+  }
+
   Future<void> _loadProperties() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -7189,6 +7326,7 @@ class _MapScreenState extends State<MapScreen> {
             mapObjects: mapObjects,
             onMapCreated: (YandexMapController controller) {
               mapController = controller;
+              _mapControllerReady = true;
               // Применяем стиль, только если он не пустой
               if (_mapStyle.length > 5) {
                 mapController.setMapStyle(_mapStyle);
@@ -7241,13 +7379,35 @@ class _MapScreenState extends State<MapScreen> {
                               borderRadius: BorderRadius.circular(24),
                               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(0, 5))],
                             ),
-                            child: const TextField(
+                            child: TextField(
+                              controller: _searchController,
+                              onChanged: _onSearchChanged,
+                              onSubmitted: _performAddressSearch,
+                              textInputAction: TextInputAction.search,
                               decoration: InputDecoration(
                                 hintText: 'Поиск адреса...',
-                                hintStyle: TextStyle(color: Colors.black38),
-                                prefixIcon: Icon(Icons.search, color: Colors.black54),
+                                hintStyle: const TextStyle(color: Colors.black38),
+                                prefixIcon: const Icon(Icons.search, color: Colors.black54),
+                                suffixIcon: _isSearchingAddress
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12.0),
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      )
+                                    : _searchController.text.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear, color: Colors.grey),
+                                            onPressed: () {
+                                              _searchController.clear();
+                                              _onSearchChanged('');
+                                            },
+                                          )
+                                        : null,
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(vertical: 14),
+                                contentPadding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                             ),
                           ),
@@ -7287,6 +7447,50 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                       ],
                     ),
+                    // Подсказки автодополнения по адресу
+                    if (_searchSuggestions.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 260),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            itemCount: _searchSuggestions.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final item = _searchSuggestions[index];
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(Icons.location_on_outlined,
+                                    color: _primaryOrange, size: 20),
+                                title: Text(item.title,
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                subtitle: (item.subtitle != null && item.subtitle!.isNotEmpty)
+                                    ? Text(item.subtitle!,
+                                        style: const TextStyle(fontSize: 11),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis)
+                                    : null,
+                                onTap: () => _onSuggestionTapped(item),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                     // Dropdown выбора профиля поиска
                     if (_myProfiles.isNotEmpty) ...
                       [

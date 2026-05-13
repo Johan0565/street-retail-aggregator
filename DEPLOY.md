@@ -1,5 +1,7 @@
 # Инструкция по деплою
 
+> Если приложение уже задеплоено и нужно только накатить новую версию — иди сразу в [раздел 10](#10-обновление-кода-в-проде).
+
 ## 1. Подготовка домена (в кабинете reg.ru)
 
 Домен `magomedov.online` уже занят сайтом-визиткой (GitHub Pages) — трогать не нужно.
@@ -74,6 +76,22 @@ nano .env
 openssl rand -base64 32
 ```
 
+Минимальный набор переменных на текущий момент:
+```
+POSTGRES_DB=retail_aggregator
+POSTGRES_USER=...
+POSTGRES_PASSWORD=...
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+OPENROUTER_API_KEY=...
+# Опционально:
+# OVERPASS_API_URL=https://overpass-api.de/api/interpreter
+# APP_UPLOAD_DIR=/app/uploads
+```
+`TWOGIS_API_KEY` больше не используется — поиск соседних бизнесов перешёл на Overpass (OpenStreetMap, без ключа).
+
 ## 6. Первый запуск (HTTP, без SSL)
 
 ```bash
@@ -146,11 +164,78 @@ flutter run --release --dart-define=API_BASE_URL=https://api.magomedov.online
 
 ## 10. Обновление кода в проде
 
+### 10.1. Если поменялся только код (без `.env`, без новых volume)
+
+На локальной машине:
+```bash
+git add -A
+git commit -m "описание изменений"
+git push origin main
+```
+
+На сервере:
 ```bash
 cd /opt/street-retail-aggregator
 git pull
 docker compose up -d --build backend
+docker compose logs -f backend   # Ctrl+C когда увидишь "Started ... in N seconds"
 ```
+
+### 10.2. Если поменялся `.env`
+
+`.env` в гите не лежит (см. `.gitignore`), поэтому правки делаются прямо на сервере:
+
+```bash
+cd /opt/street-retail-aggregator
+git pull
+nano .env                        # внеси новые значения (или scp'ом залей с локала)
+docker compose up -d --build backend
+docker compose logs -f backend
+```
+
+Если меняются переменные, которые читает не только backend (например, `POSTGRES_*`), переподними и базу:
+```bash
+docker compose up -d --build       # без указания сервиса = пересоздать все, у кого env поменялся
+```
+ВНИМАНИЕ: смена `POSTGRES_PASSWORD` после первой инициализации НЕ перезапишет пароль внутри Postgres-volume. Меняй пароль через `ALTER USER` в psql, не через `.env`.
+
+### 10.3. Если появился новый volume (например, для `uploads/`)
+
+В этом релизе добавился аплоад фото помещений и аватарок. Файлы пишутся в `./uploads` внутри контейнера backend. Без volume они исчезнут при следующем `--build backend`.
+
+Открой `docker-compose.yml` и в сервис `backend` добавь:
+```yaml
+    volumes:
+      - ./uploads:/app/uploads
+```
+(сразу под `environment:` блоком, на том же уровне отступа).
+
+И в `nginx/conf.d/api.conf` в HTTPS-блок добавь раздачу статики (чтобы клиенты могли скачивать картинки):
+```nginx
+    client_max_body_size 25M;
+
+    location /uploads/ {
+        proxy_pass http://backend:8080;
+        proxy_set_header Host $host;
+    }
+```
+(если не хочешь гонять статику через Spring — можно прокинуть `./uploads` в nginx и раздавать напрямую, но это опционально).
+
+Затем:
+```bash
+mkdir -p /opt/street-retail-aggregator/uploads
+docker compose up -d --build backend
+docker compose restart nginx
+```
+
+### 10.4. Откат, если что-то пошло не так
+
+```bash
+git log --oneline -10            # найди хеш предыдущего рабочего коммита
+git checkout <hash>
+docker compose up -d --build backend
+```
+Чтобы вернуться к актуальной ветке: `git checkout main && git pull`.
 
 ## Полезные команды
 

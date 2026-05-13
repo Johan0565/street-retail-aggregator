@@ -7,10 +7,10 @@ class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
 
   @override
-  State<FavoritesScreen> createState() => _FavoritesScreenState();
+  State<FavoritesScreen> createState() => FavoritesScreenState();
 }
 
-class _FavoritesScreenState extends State<FavoritesScreen> {
+class FavoritesScreenState extends State<FavoritesScreen> {
   final FavoriteService _favoriteService = FavoriteService();
   late Future<List<Property>> _favoritesFuture;
   final Color _primaryOrange = const Color(0xFFFF8C00);
@@ -18,13 +18,16 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFavorites();
+    loadFavorites();
   }
 
-  void _loadFavorites() {
+  // Публичный — вызывается извне (при переключении вкладки и т.д.)
+  Future<void> loadFavorites() async {
+    final future = _favoriteService.getMyFavorites();
     setState(() {
-      _favoritesFuture = _favoriteService.getMyFavorites();
+      _favoritesFuture = future;
     });
+    await future;
   }
 
   @override
@@ -45,13 +48,25 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           } else if (snapshot.hasError) {
             return const Center(child: Text('Ошибка при загрузке данных'));
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+            return RefreshIndicator(
+              color: _primaryOrange,
+              onRefresh: loadFavorites,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
-                  Icon(Icons.favorite_border, size: 80, color: Colors.grey[300]),
-                  const SizedBox(height: 16),
-                  const Text('У вас пока нет избранных', style: TextStyle(color: Colors.grey, fontSize: 18)),
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.favorite_border, size: 80, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          const Text('У вас пока нет избранных', style: TextStyle(color: Colors.grey, fontSize: 18)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
@@ -61,7 +76,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
           return RefreshIndicator(
             color: _primaryOrange,
-            onRefresh: () async => _loadFavorites(),
+            onRefresh: loadFavorites,
             child: ListView.separated(
               padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
               itemCount: properties.length,
@@ -79,7 +94,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       ),
                     ).then((_) {
                       // Когда возвращаемся назад, обновляем список (вдруг мы убрали лайк)
-                      _loadFavorites();
+                      loadFavorites();
                     });
                   },
                   child: Container(

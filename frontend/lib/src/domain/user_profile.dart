@@ -4,7 +4,8 @@ class UserProfile {
   final String inn;
   final String phone;
   final String businessCategory;
-  final int? businessCategoryId; // <-- ДОБАВИЛИ ID
+  final int? businessCategoryId;
+  final String? avatarUrl;
 
   UserProfile({
     required this.id,
@@ -12,7 +13,8 @@ class UserProfile {
     required this.inn,
     required this.phone,
     required this.businessCategory,
-    this.businessCategoryId, // <-- ДОБАВИЛИ СЮДА
+    this.businessCategoryId,
+    this.avatarUrl,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -21,7 +23,7 @@ class UserProfile {
 
     if (json['targetBusinessCategory'] != null) {
       categoryName = json['targetBusinessCategory']['name'] ?? 'Не выбрана';
-      categoryId = json['targetBusinessCategory']['id']; // <-- ЧИТАЕМ ID ИЗ JSON
+      categoryId = json['targetBusinessCategory']['id'];
     }
 
     return UserProfile(
@@ -30,7 +32,8 @@ class UserProfile {
       inn: json['inn'] ?? 'ИНН не указан',
       phone: json['phone'] ?? 'Телефон не указан',
       businessCategory: categoryName,
-      businessCategoryId: categoryId, // <-- ПЕРЕДАЕМ В КОНСТРУКТОР
+      businessCategoryId: categoryId,
+      avatarUrl: json['avatarUrl']?.toString(),
     );
   }
 }

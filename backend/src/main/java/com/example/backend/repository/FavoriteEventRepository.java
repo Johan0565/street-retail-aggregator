@@ -10,4 +10,5 @@ import java.util.List;
 @Repository
 public interface FavoriteEventRepository extends JpaRepository<FavoriteEvent, Long> {
     List<FavoriteEvent> findByPropertyLandlordIdAndCreatedAtAfter(Long landlordId, LocalDateTime date);
+    List<FavoriteEvent> findByPropertyIdAndCreatedAtAfter(Long propertyId, LocalDateTime date);
 }

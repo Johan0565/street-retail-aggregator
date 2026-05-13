@@ -39,6 +39,9 @@ public class User implements UserDetails {
     @Enumerated(EnumType.STRING)
     private UserStatus status;
 
+    @Column(name = "avatar_url")
+    private String avatarUrl;
+
     @Column(name = "verification_code")
     @JsonIgnore
     private String verificationCode;

@@ -1,3 +1,19 @@
+class PropertyImage {
+  final int id;
+  final String imageUrl;
+  final bool isMain;
+
+  PropertyImage({required this.id, required this.imageUrl, required this.isMain});
+
+  factory PropertyImage.fromJson(Map<String, dynamic> json) {
+    return PropertyImage(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      isMain: json['isMain'] == true,
+    );
+  }
+}
+
 class Property {
   final int id;
   final String title;
@@ -37,6 +53,8 @@ class Property {
   final String? metroStation;
   final int? timeToMetro;
 
+  final List<PropertyImage> images;
+
   Property({
     required this.id,
     required this.title,
@@ -68,6 +86,7 @@ class Property {
     this.layout,
     this.contactName,
     this.contactPhone,
+    this.images = const [],
   });
 
   factory Property.fromJson(Map<String, dynamic> json) {
@@ -102,6 +121,10 @@ class Property {
       isOccupied: json['isOccupied'] == true,
       metroStation: json['metroStation']?.toString(),
       timeToMetro: (json['timeToMetro'] as num?)?.toInt(),
+      images: (json['images'] as List<dynamic>?)
+              ?.map((e) => PropertyImage.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 }

@@ -11,8 +11,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.security.Principal;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/profiles")
@@ -65,6 +67,24 @@ public class ProfileController {
         }
         throw new RuntimeException("Не удалось извлечь ID пользователя из токена");
     }
+    // --- АВАТАРКА ---
+
+    @PostMapping(value = "/me/avatar", consumes = "multipart/form-data")
+    public ResponseEntity<Map<String, String>> uploadAvatar(
+            @RequestPart("file") MultipartFile file,
+            Principal principal) {
+        Long userId = extractUserIdFromPrincipal(principal);
+        String url = profileService.uploadAvatar(userId, file);
+        return ResponseEntity.ok(Map.of("avatarUrl", url));
+    }
+
+    @DeleteMapping("/me/avatar")
+    public ResponseEntity<Void> deleteAvatar(Principal principal) {
+        Long userId = extractUserIdFromPrincipal(principal);
+        profileService.deleteAvatar(userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/tenant/{userId}")
     public ResponseEntity<TenantProfile> getTenantProfileById(@PathVariable Long userId) {
         return ResponseEntity.ok(profileService.getTenantProfile(userId));

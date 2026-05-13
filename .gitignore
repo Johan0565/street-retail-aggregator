@@ -28,6 +28,13 @@ frontend/.packages
 *.env
 .env.*
 application-secret.properties
+backend/src/main/resources/application-dev.properties
+
+# =========================
+# Загруженные пользователями файлы
+# =========================
+uploads/
+backend/uploads/
 
 # =========================
 # Среды разработки (IDE) и ОС

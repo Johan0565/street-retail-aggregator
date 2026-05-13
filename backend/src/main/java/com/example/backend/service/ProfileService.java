@@ -5,12 +5,15 @@ import com.example.backend.dto.UpdateTenantProfileRequest;
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.LandlordProfile;
 import com.example.backend.entity.TenantProfile;
+import com.example.backend.entity.User;
 import com.example.backend.repository.BusinessCategoryRepository;
 import com.example.backend.repository.LandlordProfileRepository;
 import com.example.backend.repository.TenantProfileRepository;
+import com.example.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -19,13 +22,17 @@ public class ProfileService {
     private final TenantProfileRepository tenantProfileRepository;
     private final LandlordProfileRepository landlordProfileRepository;
     private final BusinessCategoryRepository businessCategoryRepository;
+    private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
 
     // --- ЛОГИКА АРЕНДАТОРА (TENANT) ---
 
     @Transactional(readOnly = true)
     public TenantProfile getTenantProfile(Long userId) {
-        return tenantProfileRepository.findById(userId)
+        TenantProfile profile = tenantProfileRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Профиль арендатора не найден"));
+        userRepository.findById(userId).ifPresent(u -> profile.setAvatarUrl(u.getAvatarUrl()));
+        return profile;
     }
 
     @Transactional
@@ -50,8 +57,10 @@ public class ProfileService {
 
     @Transactional(readOnly = true)
     public LandlordProfile getLandlordProfile(Long userId) {
-        return landlordProfileRepository.findById(userId)
+        LandlordProfile profile = landlordProfileRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Профиль арендодателя не найден"));
+        userRepository.findById(userId).ifPresent(u -> profile.setAvatarUrl(u.getAvatarUrl()));
+        return profile;
     }
 
     @Transactional
@@ -64,5 +73,34 @@ public class ProfileService {
         // isVerified мы не разрешаем менять самому пользователю (это делает админ)
 
         return landlordProfileRepository.save(profile);
+    }
+
+    // --- АВАТАРКА ---
+
+    @Transactional
+    public String uploadAvatar(Long userId, MultipartFile file) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+
+        String oldUrl = user.getAvatarUrl();
+        String newUrl = fileStorageService.store(file, "avatars/" + userId);
+        user.setAvatarUrl(newUrl);
+        userRepository.save(user);
+
+        if (oldUrl != null) {
+            fileStorageService.delete(oldUrl);
+        }
+        return newUrl;
+    }
+
+    @Transactional
+    public void deleteAvatar(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+        if (user.getAvatarUrl() != null) {
+            fileStorageService.delete(user.getAvatarUrl());
+            user.setAvatarUrl(null);
+            userRepository.save(user);
+        }
     }
 }

@@ -77,18 +77,30 @@ class _SearchProfilesScreenState extends State<SearchProfilesScreen> {
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 20),
         ),
         iconTheme: const IconThemeData(color: Colors.black),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const CreateSearchProfileScreen()),
-          );
-          if (result == true) _loadProfiles();
-        },
-        backgroundColor: Colors.black,
-        icon: Icon(Icons.add, color: _primaryOrange),
-        label: Text('Новый проект', style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold)),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Material(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () async {
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CreateSearchProfileScreen()),
+                  );
+                  if (result == true) _loadProfiles();
+                },
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(Icons.add, color: _primaryOrange, size: 24),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -117,24 +129,6 @@ class _SearchProfilesScreenState extends State<SearchProfilesScreen> {
           const SizedBox(height: 8),
           const Text('Создайте проект, чтобы алгоритм\nподбирал помещения под ваш бизнес',
               textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)),
-          const SizedBox(height: 28),
-          ElevatedButton.icon(
-            onPressed: () async {
-              final result = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(builder: (_) => const CreateSearchProfileScreen()),
-              );
-              if (result == true) _loadProfiles();
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Создать первый проект', style: TextStyle(fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: _primaryOrange,
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
         ],
       ),
     );
@@ -221,6 +215,13 @@ class _SearchProfilesScreenState extends State<SearchProfilesScreen> {
                     if (profile.requiresWc == true) _buildTag(Icons.wc, 'Санузел'),
                     if (profile.requiresParking == true) _buildTag(Icons.local_parking, 'Парковка'),
                     if (profile.requiresLoadingZone == true) _buildTag(Icons.local_shipping, 'Разгрузка'),
+                    if (profile.searchRadiusMeters != null)
+                      _buildTag(
+                        Icons.adjust,
+                        profile.searchRadiusMeters! >= 1000
+                            ? 'R ${(profile.searchRadiusMeters! / 1000).toStringAsFixed(profile.searchRadiusMeters! % 1000 == 0 ? 0 : 1)} км'
+                            : 'R ${profile.searchRadiusMeters} м',
+                      ),
                   ],
                 ),
               ],
@@ -294,6 +295,12 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
   bool _requiresParking = false;
   bool _requiresLoadingZone = false;
 
+  // Радиус анализа окрестности (метры). Управляет и поиском конкурентов,
+  // и поиском соседей для синергии.
+  static const double _radiusMin = 200;
+  static const double _radiusMax = 5000;
+  double _radiusMeters = 1000;
+
   // Категория бизнеса
   List<Map<String, dynamic>> _categories = [];
   int? _selectedCategoryId;
@@ -328,6 +335,11 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
     _requiresWc = p.requiresWc ?? false;
     _requiresParking = p.requiresParking ?? false;
     _requiresLoadingZone = p.requiresLoadingZone ?? false;
+    if (p.searchRadiusMeters != null) {
+      _radiusMeters = p.searchRadiusMeters!
+          .toDouble()
+          .clamp(_radiusMin, _radiusMax);
+    }
     _desiredNeighborIds
       ..clear()
       ..addAll(p.desiredNeighborCategoryIds);
@@ -365,6 +377,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
       'requiresWc': _requiresWc,
       'requiresParking': _requiresParking,
       'requiresLoadingZone': _requiresLoadingZone,
+      'searchRadiusMeters': _radiusMeters.round(),
       if (_desiredNeighborIds.isNotEmpty)
         'desiredNeighborCategoryIds': _desiredNeighborIds.toList(),
     };
@@ -539,12 +552,14 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
           // ── Шаг 4: Соседи (синергия) ────────────────────────────────────
           Step(
             title: const Text('Соседи', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('С какими бизнесами хотите быть рядом'),
+            subtitle: const Text('Радиус анализа и желаемое соседство'),
             isActive: _currentStep >= 3,
             state: StepState.indexed,
             content: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildRadiusSlider(),
+                const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Text(
@@ -619,6 +634,72 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: _primaryOrange, width: 2),
         ),
+      ),
+    );
+  }
+
+  Widget _buildRadiusSlider() {
+    final int meters = _radiusMeters.round();
+    final String label = meters >= 1000
+        ? '${(meters / 1000).toStringAsFixed(meters % 1000 == 0 ? 0 : 1)} км'
+        : '$meters м';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.adjust, size: 16, color: Colors.black54),
+              const SizedBox(width: 6),
+              const Text(
+                'Радиус анализа окрестности',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _primaryOrange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                      color: _primaryOrange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: _primaryOrange,
+              thumbColor: _primaryOrange,
+              overlayColor: _primaryOrange.withValues(alpha: 0.15),
+              inactiveTrackColor: Colors.grey[200],
+              trackHeight: 4,
+            ),
+            child: Slider(
+              min: _radiusMin,
+              max: _radiusMax,
+              divisions: ((_radiusMax - _radiusMin) / 100).round(),
+              value: _radiusMeters.clamp(_radiusMin, _radiusMax),
+              label: label,
+              onChanged: (v) => setState(() => _radiusMeters = v),
+            ),
+          ),
+          Text(
+            'В этом радиусе ищутся прямые/косвенные конкуренты и желаемые соседи для синергии.',
+            style: TextStyle(fontSize: 11, color: Colors.grey[600], height: 1.3),
+          ),
+        ],
       ),
     );
   }

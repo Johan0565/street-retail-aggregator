@@ -15,9 +15,9 @@ public class CacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager manager = new CaffeineCacheManager("gisNearby", "propertyScore");
+        CaffeineCacheManager manager = new CaffeineCacheManager("overpassNearby", "propertyScore");
         manager.setCaffeine(Caffeine.newBuilder()
-                .expireAfterWrite(30, TimeUnit.MINUTES)
+                .expireAfterWrite(60, TimeUnit.MINUTES)
                 .maximumSize(1000));
         return manager;
     }

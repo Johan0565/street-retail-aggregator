@@ -29,4 +29,7 @@ public class TenantProfile {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "target_business_category_id")
     private BusinessCategory targetBusinessCategory;
+
+    @Transient
+    private String avatarUrl;
 }

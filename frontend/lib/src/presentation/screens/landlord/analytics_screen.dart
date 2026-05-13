@@ -4,9 +4,15 @@ import '../../../services/analytics_service.dart';
 
 const _orange = Color(0xFFFF8C00);
 const _purple = Color(0xFF7C3AED);
+const _teal = Color(0xFF14B8A6);
 
 class AnalyticsScreen extends StatefulWidget {
-  const AnalyticsScreen({super.key});
+  /// Если передан — экран показывает аналитику только по этому помещению.
+  /// Если null — общая аналитика по всем неархивным объектам.
+  final int? propertyId;
+  final String? propertyTitle;
+
+  const AnalyticsScreen({super.key, this.propertyId, this.propertyTitle});
 
   @override
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
@@ -16,10 +22,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final AnalyticsService _analyticsService = AnalyticsService();
   late Future<AnalyticsDto?> _analyticsFuture;
 
+  bool get _isPerProperty => widget.propertyId != null;
+
   @override
   void initState() {
     super.initState();
-    _analyticsFuture = _analyticsService.getMyAnalytics();
+    _analyticsFuture = _load();
+  }
+
+  Future<AnalyticsDto?> _load() {
+    if (_isPerProperty) {
+      return _analyticsService.getPropertyAnalytics(widget.propertyId!);
+    }
+    return _analyticsService.getMyAnalytics();
+  }
+
+  Future<void> _refresh() async {
+    final fresh = _load();
+    setState(() => _analyticsFuture = fresh);
+    await fresh;
   }
 
   @override
@@ -27,7 +48,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        title: const Text('Аналитика', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          _isPerProperty ? 'Аналитика помещения' : 'Общая аналитика',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -39,33 +63,57 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             return const Center(child: CircularProgressIndicator(color: _orange));
           }
           if (snapshot.hasError || snapshot.data == null) {
-            return const Center(
-              child: Text('Не удалось загрузить аналитику',
-                  style: TextStyle(color: Colors.grey)),
+            return RefreshIndicator(
+              color: _orange,
+              onRefresh: _refresh,
+              child: ListView(
+                children: const [
+                  SizedBox(height: 200),
+                  Center(
+                    child: Text('Не удалось загрузить аналитику',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                ],
+              ),
             );
           }
 
           final data = snapshot.data!;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('За последние 30 дней',
-                    style: TextStyle(fontSize: 13, color: Colors.grey)),
-                const SizedBox(height: 12),
-                _buildSummaryGrid(data),
-                const SizedBox(height: 28),
-                const Text(
-                  'Динамика по дням',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                _buildLegend(),
-                const SizedBox(height: 12),
-                _buildChart(data),
-              ],
+          return RefreshIndicator(
+            color: _orange,
+            onRefresh: _refresh,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_isPerProperty && (widget.propertyTitle ?? '').isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        widget.propertyTitle!,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  const Text('За последние 30 дней',
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const SizedBox(height: 12),
+                  _buildSummaryGrid(data),
+                  const SizedBox(height: 28),
+                  const Text(
+                    'Динамика по дням',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildLegend(),
+                  const SizedBox(height: 12),
+                  _buildChart(data),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           );
         },
@@ -73,7 +121,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  // 2×2 сетка карточек
   Widget _buildSummaryGrid(AnalyticsDto data) {
     return Column(
       children: [
@@ -89,11 +136,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         const SizedBox(height: 12),
         Row(
           children: [
-            _buildCard('Заявки', data.totalApplications.toString(),
-                Icons.assignment_outlined, Colors.teal),
+            _buildCard(
+                _isPerProperty ? 'Заявки за 30 дней' : 'Заявки',
+                (_isPerProperty
+                        ? data.totalApplicationsLast30Days
+                        : data.totalApplications)
+                    .toString(),
+                Icons.assignment_outlined,
+                _teal),
             const SizedBox(width: 12),
-            _buildCard('Написали', data.totalUniqueMessengers.toString(),
-                Icons.chat_bubble_outline, Colors.indigo),
+            if (_isPerProperty)
+              _buildCard(
+                  'Всего заявок',
+                  data.totalApplications.toString(),
+                  Icons.inbox_outlined,
+                  Colors.brown)
+            else
+              _buildCard('Написали', data.totalUniqueMessengers.toString(),
+                  Icons.chat_bubble_outline, Colors.indigo),
           ],
         ),
       ],
@@ -109,7 +169,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha:0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               offset: const Offset(0, 4),
               blurRadius: 10,
             )
@@ -120,7 +180,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withValues(alpha:0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, color: color, size: 22),
@@ -145,17 +205,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildLegend() {
-    return Row(
+    return Wrap(
+      spacing: 16,
+      runSpacing: 6,
       children: [
         _legendDot(_orange, 'Просмотры'),
-        const SizedBox(width: 16),
         _legendDot(_purple, 'Лайки'),
+        _legendDot(_teal, 'Заявки'),
       ],
     );
   }
 
   Widget _legendDot(Color color, String label) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 10,
@@ -169,10 +232,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildChart(AnalyticsDto data) {
-    // Объединяем все даты из обоих источников
     final allDates = <String>{
       ...data.viewsByDate.keys,
       ...data.favoritesByDate.keys,
+      ...data.applicationsByDate.keys,
     }.toList()
       ..sort();
 
@@ -180,6 +243,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       return Container(
         height: 200,
         alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: const Text('Нет данных для графика',
             style: TextStyle(color: Colors.grey)),
       );
@@ -187,27 +254,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final viewSpots = <FlSpot>[];
     final favoriteSpots = <FlSpot>[];
+    final applicationSpots = <FlSpot>[];
 
     for (int i = 0; i < allDates.length; i++) {
       final date = allDates[i];
-      viewSpots.add(FlSpot(i.toDouble(),
-          (data.viewsByDate[date] ?? 0).toDouble()));
-      favoriteSpots.add(FlSpot(i.toDouble(),
-          (data.favoritesByDate[date] ?? 0).toDouble()));
+      viewSpots.add(FlSpot(
+          i.toDouble(), (data.viewsByDate[date] ?? 0).toDouble()));
+      favoriteSpots.add(FlSpot(
+          i.toDouble(), (data.favoritesByDate[date] ?? 0).toDouble()));
+      applicationSpots.add(FlSpot(
+          i.toDouble(), (data.applicationsByDate[date] ?? 0).toDouble()));
     }
 
-    // Показываем подписи только каждые N дней, чтобы не перекрывались
     final step = allDates.length > 14 ? 3 : (allDates.length > 7 ? 2 : 1);
 
     return Container(
-      height: 260,
+      height: 280,
       padding: const EdgeInsets.only(right: 16, top: 8, bottom: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             offset: const Offset(0, 4),
             blurRadius: 10,
           )
@@ -275,8 +344,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               touchTooltipData: LineTouchTooltipData(
                 getTooltipItems: (touchedSpots) {
                   return touchedSpots.map((s) {
-                    final color = s.barIndex == 0 ? _orange : _purple;
-                    final label = s.barIndex == 0 ? 'просм.' : 'лайков';
+                    Color color;
+                    String label;
+                    switch (s.barIndex) {
+                      case 0:
+                        color = _orange;
+                        label = 'просм.';
+                        break;
+                      case 1:
+                        color = _purple;
+                        label = 'лайков';
+                        break;
+                      default:
+                        color = _teal;
+                        label = 'заявок';
+                    }
                     return LineTooltipItem(
                       '${s.y.toInt()} $label',
                       TextStyle(
@@ -289,53 +371,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ),
             ),
             lineBarsData: [
-              // Линия просмотров
-              LineChartBarData(
-                spots: viewSpots,
-                isCurved: true,
-                color: _orange,
-                barWidth: 3,
-                isStrokeCapRound: true,
-                dotData: FlDotData(
-                  show: true,
-                  getDotPainter: (spot, percent, bar, index) =>
-                      FlDotCirclePainter(
-                    radius: 3,
-                    color: Colors.white,
-                    strokeWidth: 2,
-                    strokeColor: _orange,
-                  ),
-                ),
-                belowBarData: BarAreaData(
-                  show: true,
-                  color: _orange.withValues(alpha:0.08),
-                ),
-              ),
-              // Линия лайков
-              LineChartBarData(
-                spots: favoriteSpots,
-                isCurved: true,
-                color: _purple,
-                barWidth: 3,
-                isStrokeCapRound: true,
-                dotData: FlDotData(
-                  show: true,
-                  getDotPainter: (spot, percent, bar, index) =>
-                      FlDotCirclePainter(
-                    radius: 3,
-                    color: Colors.white,
-                    strokeWidth: 2,
-                    strokeColor: _purple,
-                  ),
-                ),
-                belowBarData: BarAreaData(
-                  show: true,
-                  color: _purple.withValues(alpha:0.06),
-                ),
-              ),
+              _buildLine(viewSpots, _orange, 0.08),
+              _buildLine(favoriteSpots, _purple, 0.06),
+              _buildLine(applicationSpots, _teal, 0.06),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  LineChartBarData _buildLine(List<FlSpot> spots, Color color, double areaAlpha) {
+    return LineChartBarData(
+      spots: spots,
+      isCurved: true,
+      color: color,
+      barWidth: 3,
+      isStrokeCapRound: true,
+      dotData: FlDotData(
+        show: true,
+        getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+          radius: 3,
+          color: Colors.white,
+          strokeWidth: 2,
+          strokeColor: color,
+        ),
+      ),
+      belowBarData: BarAreaData(
+        show: true,
+        color: color.withValues(alpha: areaAlpha),
       ),
     );
   }
