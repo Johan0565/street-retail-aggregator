@@ -140,10 +140,31 @@ public class ApplicationService {
         String propertyTitle = "Объект удален";
         String propertyAddress = "Адрес неизвестен";
 
+        Long landlordId = 0L;
+        String landlordName = null;
+        String landlordPhone = null;
+
         if (app.getProperty() != null) {
             propertyId = app.getProperty().getId();
             propertyTitle = app.getProperty().getTitle();
             propertyAddress = app.getProperty().getAddress();
+
+            // Контакт из самого объявления имеет приоритет
+            landlordName = app.getProperty().getContactName();
+            landlordPhone = app.getProperty().getContactPhone();
+
+            User landlord = app.getProperty().getLandlord();
+            if (landlord != null) {
+                landlordId = landlord.getId();
+                if (landlord.getLandlordProfile() != null) {
+                    if (landlordName == null || landlordName.isBlank()) {
+                        landlordName = landlord.getLandlordProfile().getCompanyName();
+                    }
+                    if (landlordPhone == null || landlordPhone.isBlank()) {
+                        landlordPhone = landlord.getLandlordProfile().getPhone();
+                    }
+                }
+            }
         }
 
         return ApplicationResponseDto.builder()
@@ -162,6 +183,11 @@ public class ApplicationService {
                         .email(app.getTenant() != null ? app.getTenant().getEmail() : "Не указано")
                         .name(tenantName)
                         .phone(tenantPhone)
+                        .build())
+                .landlord(ApplicationResponseDto.LandlordShortInfo.builder()
+                        .id(landlordId)
+                        .name(landlordName)
+                        .phone(landlordPhone)
                         .build())
                 .build();
     }

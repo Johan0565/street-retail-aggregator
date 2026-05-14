@@ -50,51 +50,31 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
         child: const Icon(Icons.add, color: Colors.white, size: 36),
       ),
 
-      // ИСПРАВЛЕННАЯ ПЛАВАЮЩАЯ ПАНЕЛЬ НАВИГАЦИИ (СТИЛЬ КАК У TENANT)
+      // ПЛАВАЮЩАЯ ПАНЕЛЬ НАВИГАЦИИ (стиль идентичен арендатору, по центру — место под FAB)
       bottomNavigationBar: SafeArea(
         child: Container(
-          // 1. Сделали отступы как у Арендатора
-          margin: const EdgeInsets.only(left: 24, right: 24, bottom: 24),
-          // 2. Вернули вертикальный паддинг
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          margin: const EdgeInsets.only(left: 12, right: 12, bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           decoration: BoxDecoration(
-            // 3. Вернули цвет black87 (чуть прозрачный черный)
             color: Colors.black87,
             borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.3),
-                blurRadius: 20, // Вернули размытие тени до 20
-                offset: const Offset(0, 10), // Смещение тени как у Арендатора
+                blurRadius: 20,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              // --- ЛЕВАЯ ЖЕСТКАЯ ПОЛОВИНА ---
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
-                    _buildNavItem(icon: Icons.business_outlined, activeIcon: Icons.business_center, label: 'Объекты', index: 1),
-                  ],
-                ),
-              ),
-
-              // --- ЦЕНТРАЛЬНОЕ МЕСТО ПОД КНОПКУ (Зафиксировано) ---
+              _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
+              _buildNavItem(icon: Icons.business_outlined, activeIcon: Icons.business_center, label: 'Объекты', index: 1),
+              // Зазор под центральный FAB «+»
               const SizedBox(width: 56),
-
-              // --- ПРАВАЯ ЖЕСТКАЯ ПОЛОВИНА ---
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail_rounded, label: 'Заявки', index: 2),
-                    _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person_rounded, label: 'Профиль', index: 3),
-                  ],
-                ),
-              ),
+              _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail, label: 'Заявки', index: 2),
+              _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Профиль', index: 3),
             ],
           ),
         ),
@@ -135,24 +115,29 @@ class _LandlordMainScreenState extends State<LandlordMainScreen> {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? _primaryOrange.withOpacity(0.15) : Colors.transparent,
+          color: isSelected ? _primaryOrange.withOpacity(0.2) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min, // Убеждаемся, что кнопка не растягивается бесконечно
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               isSelected ? activeIcon : icon,
-              color: isSelected ? _primaryOrange : Colors.white60,
+              color: isSelected ? _primaryOrange : Colors.white70,
               size: 24,
             ),
             if (isSelected) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               Text(
                 label,
-                style: TextStyle(color: _primaryOrange, fontWeight: FontWeight.bold, fontSize: 12),
+                style: TextStyle(
+                  color: _primaryOrange,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
               ),
             ]
           ],

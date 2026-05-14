@@ -14,12 +14,16 @@ class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
   final bool isLandlordMode;
   final ScoredProperty? scoredProperty; // необязательный результат скоринга
+  /// ID проекта поиска, под который строится скоринг и AI-отчёт. Если не
+  /// задан — бэкенд использует первый активный проект арендатора.
+  final int? profileId;
 
   const PropertyDetailsScreen({
     super.key,
     required this.property,
     this.isLandlordMode = false,
     this.scoredProperty,
+    this.profileId,
   });
 
   @override
@@ -59,7 +63,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
   Future<void> _loadScore() async {
     setState(() => _isLoadingScore = true);
-    final score = await PropertyService().scoreProperty(widget.property.id);
+    final score = await PropertyService()
+        .scoreProperty(widget.property.id, profileId: widget.profileId);
     if (!mounted) return;
     setState(() {
       _loadedScore = score;
@@ -341,6 +346,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     const SizedBox(height: 16),
                     _buildScoringCard((widget.scoredProperty ?? _loadedScore)!),
                     const SizedBox(height: 10),
+                    _buildCompetitorsButton((widget.scoredProperty ?? _loadedScore)!),
+                    const SizedBox(height: 10),
                     _buildAiExplainButton(),
                   ] else if (!widget.isLandlordMode) ...[
                     const SizedBox(height: 16),
@@ -612,13 +619,78 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
+  Widget _buildCompetitorsButton(ScoredProperty scored) {
+    final direct = scored.directCompetitorNames.length;
+    final indirect = scored.indirectCompetitorNames.length;
+
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _CompetitorsSheet(
+          directNames: scored.directCompetitorNames,
+          indirectNames: scored.indirectCompetitorNames,
+        ),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: primaryOrange.withValues(alpha: 0.4), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.storefront_rounded, color: primaryOrange, size: 18),
+            const SizedBox(width: 10),
+            const Text(
+              'Конкуренты рядом',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'прям. $direct',
+                style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'косв. $indirect',
+                style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+            ),
+            const Spacer(),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey[400], size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAiExplainButton() {
     return GestureDetector(
       onTap: () => showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => _AiExplainSheet(propertyId: widget.property.id),
+        builder: (_) => _AiExplainSheet(
+          propertyId: widget.property.id,
+          profileId: widget.profileId,
+        ),
       ),
       child: Container(
         width: double.infinity,
@@ -704,13 +776,163 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  Шторка со списком конкурентов (прямые и косвенные)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _CompetitorsSheet extends StatelessWidget {
+  final List<String> directNames;
+  final List<String> indirectNames;
+
+  const _CompetitorsSheet({
+    required this.directNames,
+    required this.indirectNames,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.75;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  const Icon(Icons.storefront_rounded, color: Color(0xFFFF8C00), size: 22),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Конкуренты в радиусе поиска',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPadding + 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildGroup(
+                      title: 'Прямые конкуренты',
+                      count: directNames.length,
+                      color: const Color(0xFFEF4444),
+                      names: directNames,
+                      emptyText: 'Прямых конкурентов рядом не найдено',
+                    ),
+                    const SizedBox(height: 20),
+                    _buildGroup(
+                      title: 'Косвенные конкуренты',
+                      count: indirectNames.length,
+                      color: const Color(0xFFF59E0B),
+                      names: indirectNames,
+                      emptyText: 'Косвенных конкурентов рядом не найдено',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroup({
+    required String title,
+    required int count,
+    required Color color,
+    required List<String> names,
+    required String emptyText,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (names.isEmpty)
+          Text(emptyText, style: const TextStyle(color: Colors.grey, fontSize: 13))
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: names.map((name) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.location_on_outlined, size: 16, color: color),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name.isNotEmpty ? name : 'Без названия',
+                        style: const TextStyle(fontSize: 14, color: Colors.black87),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  AI BottomSheet — загружает и показывает объяснение оценки
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _AiExplainSheet extends StatefulWidget {
   final int propertyId;
+  final int? profileId;
 
-  const _AiExplainSheet({required this.propertyId});
+  const _AiExplainSheet({required this.propertyId, this.profileId});
 
   @override
   State<_AiExplainSheet> createState() => _AiExplainSheetState();
@@ -727,7 +949,8 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
   }
 
   Future<void> _fetch() async {
-    final result = await PropertyService().explainScore(widget.propertyId);
+    final result = await PropertyService()
+        .explainScore(widget.propertyId, profileId: widget.profileId);
     if (!mounted) return;
     setState(() {
       _explanation = result;

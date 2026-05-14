@@ -253,14 +253,14 @@ class PropertyService {
       return [];
     }
   }
-  /// Запрашивает скоринг конкретного помещения относительно активного проекта
-  /// поиска арендатора. Использует реальные данные 2GIS о конкурентах.
-  /// Возвращает null, если нет активного проекта или произошла ошибка.
-  Future<ScoredProperty?> scoreProperty(int propertyId) async {
+  /// Запрашивает скоринг конкретного помещения. Если передан [profileId] —
+  /// скоринг строится под этот проект; иначе бэкенд возьмёт первый активный.
+  Future<ScoredProperty?> scoreProperty(int propertyId, {int? profileId}) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.get(
         '/properties/$propertyId/score',
+        queryParameters: profileId != null ? {'profileId': profileId} : null,
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       if (response.statusCode == 200 && response.data != null) {
@@ -272,13 +272,15 @@ class PropertyService {
     }
   }
 
-  /// Запрашивает AI-объяснение оценки помещения.
+  /// Запрашивает AI-объяснение оценки помещения под конкретный [profileId]
+  /// (если не передан — под первый активный проект арендатора).
   /// Таймаут увеличен до 45 с — LLM может думать долго.
-  Future<String?> explainScore(int propertyId) async {
+  Future<String?> explainScore(int propertyId, {int? profileId}) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.get(
         '/properties/$propertyId/score-explain',
+        queryParameters: profileId != null ? {'profileId': profileId} : null,
         options: Options(
           headers: {'Authorization': 'Bearer $token'},
           receiveTimeout: const Duration(seconds: 45),

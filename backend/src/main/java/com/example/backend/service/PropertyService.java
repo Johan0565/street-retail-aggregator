@@ -196,21 +196,39 @@ public class PropertyService {
 
     /**
      * Рассчитать скоринг конкретного помещения для арендатора с использованием
-     * реальных данных 2GIS. Возвращает null, если нет активного профиля поиска.
+     * реальных данных 2GIS. Возвращает null, если у арендатора нет ни одного
+     * подходящего профиля поиска.
+     *
+     * @param profileId если задан — используется именно этот проект (с проверкой
+     *                  принадлежности арендатору); иначе берётся первый активный.
      */
     @Transactional(readOnly = true)
-    public ScoredPropertyDto scorePropertyForTenant(Long tenantId, Long propertyId) {
-        var activeProfiles = searchProfileRepository.findByTenantIdAndIsActiveTrue(tenantId);
-        if (activeProfiles.isEmpty()) return null;
+    public ScoredPropertyDto scorePropertyForTenant(Long tenantId, Long propertyId, Long profileId) {
+        SearchProfile profile = resolveProfile(tenantId, profileId);
+        if (profile == null) return null;
 
         Property property = propertyRepository.findById(propertyId)
                 .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
 
-        return propertyScoringService.scorePropertyWithGis(activeProfiles.get(0), property);
+        return propertyScoringService.scorePropertyWithGis(profile, property);
     }
 
+    /**
+     * Возвращает проект арендатора, под который надо строить отчёт.
+     * Если передан конкретный {@code profileId} — берём именно его (с проверкой
+     * прав); иначе — первый из активных (старый дефолт, для обратной совместимости).
+     */
     @Transactional(readOnly = true)
-    public SearchProfile findActiveProfile(Long tenantId) {
+    public SearchProfile findProfileForTenant(Long tenantId, Long profileId) {
+        return resolveProfile(tenantId, profileId);
+    }
+
+    private SearchProfile resolveProfile(Long tenantId, Long profileId) {
+        if (profileId != null) {
+            return searchProfileRepository.findById(profileId)
+                    .filter(p -> p.getTenant() != null && tenantId.equals(p.getTenant().getId()))
+                    .orElse(null);
+        }
         var profiles = searchProfileRepository.findByTenantIdAndIsActiveTrue(tenantId);
         return profiles.isEmpty() ? null : profiles.get(0);
     }

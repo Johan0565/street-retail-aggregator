@@ -11,6 +11,9 @@ class ApplicationModel {
   final String? tenantEmail;
   final String? tenantPhone;
 
+  final String? landlordName;
+  final String? landlordPhone;
+
   // НОВОЕ ПОЛЕ: Причина отказа
   final String? rejectionReason;
 
@@ -23,11 +26,14 @@ class ApplicationModel {
     this.tenantName,
     this.tenantEmail,
     this.tenantPhone,
+    this.landlordName,
+    this.landlordPhone,
     this.rejectionReason,
   });
 
   factory ApplicationModel.fromJson(Map<String, dynamic> json) {
     final tenantJson = json['tenant'];
+    final landlordJson = json['landlord'];
 
     return ApplicationModel(
       id: json['id'] ?? 0,
@@ -38,6 +44,8 @@ class ApplicationModel {
       tenantName: tenantJson?['name'],
       tenantEmail: tenantJson?['email'],
       tenantPhone: tenantJson?['phone'],
+      landlordName: landlordJson?['name'],
+      landlordPhone: landlordJson?['phone'],
       // Парсим причину отказа
       rejectionReason: json['rejectionReason'],
     );

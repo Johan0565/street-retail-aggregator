@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../../domain/application_model.dart';
 import '../../../services/application_service.dart';
 import '../chat/chat_screen.dart';
@@ -415,6 +416,55 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                             ),
                           ),
                         ),
+                        if (app.status == 'ACCEPTED' &&
+                            app.landlordPhone != null &&
+                            app.landlordPhone!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.green.withOpacity(0.25)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.phone_outlined, color: Colors.green, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Контакт владельца',
+                                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        app.landlordPhone!,
+                                        style: const TextStyle(color: Colors.black87, fontSize: 15, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Скопировать',
+                                  icon: const Icon(Icons.copy, size: 18, color: Colors.green),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: app.landlordPhone!));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Номер скопирован'),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -33,15 +33,21 @@ public class PropertyController {
 
     /**
      * Возвращает детальный скоринг помещения с реальными данными о конкурентах
-     * из 2GIS для активного проекта поиска арендатора.
-     * 204 No Content — если у арендатора нет активного проекта поиска.
+     * из 2GIS под конкретный проект поиска арендатора.
+     *
+     * Если {@code profileId} передан — скоринг строится под этот проект (с
+     * проверкой прав). Если не передан — берётся первый активный проект
+     * арендатора (старое поведение).
+     * 204 No Content — если у арендатора нет подходящего проекта поиска.
      */
     @GetMapping("/{id}/score")
     @PreAuthorize("hasRole('TENANT')")
     public ResponseEntity<ScoredPropertyDto> getPropertyScore(
-            @PathVariable Long id, Principal principal) {
+            @PathVariable Long id,
+            @RequestParam(value = "profileId", required = false) Long profileId,
+            Principal principal) {
         Long tenantId = extractUserIdFromPrincipal(principal);
-        ScoredPropertyDto score = propertyService.scorePropertyForTenant(tenantId, id);
+        ScoredPropertyDto score = propertyService.scorePropertyForTenant(tenantId, id, profileId);
         if (score == null) {
             return ResponseEntity.noContent().build();
         }
@@ -68,19 +74,22 @@ public class PropertyController {
     /**
      * GET /api/properties/{id}/score-explain
      * Генерирует текстовое объяснение оценки помещения через LLM (OpenRouter).
-     * 204 — если у арендатора нет активного профиля поиска.
+     * Если {@code profileId} передан — отчёт строится под этот проект, иначе —
+     * под первый активный проект арендатора.
+     * 204 — если подходящего проекта поиска нет.
      */
     @GetMapping("/{id}/score-explain")
     @PreAuthorize("hasRole('TENANT')")
     public ResponseEntity<ScoreExplainResponse> explainPropertyScore(
             @PathVariable Long id,
+            @RequestParam(value = "profileId", required = false) Long profileId,
             Principal principal) {
         Long tenantId = extractUserIdFromPrincipal(principal);
-        ScoredPropertyDto scored = propertyService.scorePropertyForTenant(tenantId, id);
+        ScoredPropertyDto scored = propertyService.scorePropertyForTenant(tenantId, id, profileId);
         if (scored == null) {
             return ResponseEntity.noContent().build();
         }
-        SearchProfile profile = propertyService.findActiveProfile(tenantId);
+        SearchProfile profile = propertyService.findProfileForTenant(tenantId, profileId);
         return ResponseEntity.ok(openRouterAiService.explainScore(scored, profile));
     }
 

@@ -18,6 +18,7 @@ public class ApplicationResponseDto {
     // Вложенные объекты с самым необходимым минимумом информации
     private PropertyShortInfo property;
     private TenantShortInfo tenant;
+    private LandlordShortInfo landlord;
 
     @Data
     @Builder
@@ -32,6 +33,14 @@ public class ApplicationResponseDto {
     public static class TenantShortInfo {
         private Long id;
         private String email;
+        private String name;
+        private String phone;
+    }
+
+    @Data
+    @Builder
+    public static class LandlordShortInfo {
+        private Long id;
         private String name;
         private String phone;
     }

@@ -7053,6 +7053,7 @@ class MapScreenState extends State<MapScreen> {
                         builder: (context) => PropertyDetailsScreen(
                           property: property,
                           scoredProperty: scored,
+                          profileId: _activeProfile?.id,
                           isLandlordMode: widget.isLandlordMode,
                         ),
                       ),
@@ -7360,9 +7361,8 @@ class MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // 3. ВЕРХНЯЯ ПАНЕЛЬ (Только для арендатора)
-          if (!widget.isLandlordMode)
-            SafeArea(
+          // 3. ВЕРХНЯЯ ПАНЕЛЬ (поиск + фильтр доступны и арендатору, и владельцу)
+          SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 child: Column(
@@ -7491,8 +7491,8 @@ class MapScreenState extends State<MapScreen> {
                         ),
                       ),
                     ],
-                    // Dropdown выбора профиля поиска
-                    if (_myProfiles.isNotEmpty) ...
+                    // Dropdown выбора профиля поиска (только для арендатора)
+                    if (!widget.isLandlordMode && _myProfiles.isNotEmpty) ...
                       [
                         const SizedBox(height: 8),
                         Container(

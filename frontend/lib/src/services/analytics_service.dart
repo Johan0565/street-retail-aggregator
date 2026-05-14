@@ -102,7 +102,6 @@ class AnalyticsService {
             : null,
       );
     } catch (_) {
-      // Игнорируем ошибки аналитики
     }
   }
 }
