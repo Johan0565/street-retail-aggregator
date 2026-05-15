@@ -24,13 +24,11 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFFF8C00)),
         useMaterial3: true,
       ),
-      // Теперь стартуем не с LoginScreen, а с загрузочного экрана
       home: const SplashScreen(),
     );
   }
 }
 
-// Умный экран-маршрутизатор
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -46,15 +44,12 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuth() async {
-    // Ждем долю секунды для красивой анимации (не обязательно, но выглядит приятнее)
     await Future.delayed(const Duration(milliseconds: 500));
 
     final auth = AuthService();
-    // Сначала пытаемся продолжить активную сессию.
+
     String? role = await auth.checkAutoLogin();
 
-    // Если активный токен протух, но в списке сохранённых аккаунтов есть валидные —
-    // тихо восстанавливаем самый недавний.
     if (role == null) {
       final accounts = await auth.getSavedAccounts();
       for (final acc in accounts) {
@@ -75,13 +70,11 @@ class _SplashScreenState extends State<SplashScreen> {
           MaterialPageRoute(builder: (_) => const TenantMainScreen())
       );
     } else if (role == 'LANDLORD') {
-      // Пока экрана арендодателя нет, кидаем на заглушку
       Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LandlordMainScreen())
       );
     } else {
-      // Токена нет или галочка не стояла -> на экран авторизации
       Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LoginScreen())
@@ -94,7 +87,6 @@ class _SplashScreenState extends State<SplashScreen> {
     return const Scaffold(
       backgroundColor: Colors.white,
       body: Center(
-        // Оранжевая крутилка во время проверки токена
         child: CircularProgressIndicator(color: Color(0xFFFF8C00)),
       ),
     );
