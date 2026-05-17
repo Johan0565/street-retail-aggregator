@@ -347,6 +347,10 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     _buildScoringCard((widget.scoredProperty ?? _loadedScore)!),
                     const SizedBox(height: 10),
                     _buildCompetitorsButton((widget.scoredProperty ?? _loadedScore)!),
+                    if ((widget.scoredProperty ?? _loadedScore)!.synergyNeighborNames.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _buildSynergyButton((widget.scoredProperty ?? _loadedScore)!),
+                    ],
                     const SizedBox(height: 10),
                     _buildAiExplainButton(),
                   ] else if (!widget.isLandlordMode) ...[
@@ -681,6 +685,53 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
+  Widget _buildSynergyButton(ScoredProperty scored) {
+    final count = scored.synergyNeighborNames.length;
+    const synergyColor = Color(0xFF22C55E);
+
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _SynergySheet(names: scored.synergyNeighborNames),
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: synergyColor.withValues(alpha: 0.4), width: 1.5),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.handshake_rounded, color: synergyColor, size: 18),
+            const SizedBox(width: 10),
+            const Text(
+              'Синергия рядом',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: synergyColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(color: synergyColor, fontWeight: FontWeight.bold, fontSize: 11),
+              ),
+            ),
+            const Spacer(),
+            Icon(Icons.chevron_right_rounded, color: Colors.grey[400], size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAiExplainButton() {
     return GestureDetector(
       onTap: () => showModalBottomSheet(
@@ -920,6 +971,106 @@ class _CompetitorsSheet extends StatelessWidget {
             }).toList(),
           ),
       ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Шторка со списком зданий-«синергии» (желаемые соседи)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _SynergySheet extends StatelessWidget {
+  final List<String> names;
+
+  const _SynergySheet({required this.names});
+
+  @override
+  Widget build(BuildContext context) {
+    const synergyColor = Color(0xFF22C55E);
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.75;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  const Icon(Icons.handshake_rounded, color: synergyColor, size: 22),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Синергия — желаемые соседи рядом',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: synergyColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${names.length}',
+                      style: const TextStyle(color: synergyColor, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPadding + 28),
+                child: names.isEmpty
+                    ? const Text(
+                        'Желаемых соседей рядом не найдено',
+                        style: TextStyle(color: Colors.grey, fontSize: 13),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: names.map((name) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.location_on_outlined, size: 16, color: synergyColor),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    name.isNotEmpty ? name : 'Без названия',
+                                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
