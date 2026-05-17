@@ -6855,7 +6855,10 @@ class MapScreenState extends State<MapScreen> {
 
   // Применяет активный фильтр к кэшу и перерисовывает маркеры без сетевого запроса.
   Future<void> _rebuildMarkersFromCache() async {
-    final properties = _activeFilter.apply(_allProperties);
+    final properties = _activeFilter.apply(
+      _allProperties,
+      scoreOf: (id) => _scoreCache[id]?.totalScore,
+    );
     final Map<String, Uint8List> iconCache = {};
 
     final List<Future<PlacemarkMapObject>> markerFutures = properties.map((property) async {
@@ -7115,6 +7118,8 @@ class MapScreenState extends State<MapScreen> {
     String metro     = _activeFilter.metroStation ?? '';
     Set<String> selectedTypes = Set.from(_activeFilter.propertyTypes);
     bool onlyFree    = _activeFilter.onlyFree;
+    Set<ScoreBucket> selectedBuckets = Set.from(_activeFilter.scoreBuckets);
+    final bool hasScoring = _activeProfile != null && _scoreCache.isNotEmpty;
 
     final minPriceCtrl = TextEditingController(text: minPrice?.toInt().toString() ?? '');
     final maxPriceCtrl = TextEditingController(text: maxPrice?.toInt().toString() ?? '');
@@ -7162,6 +7167,7 @@ class MapScreenState extends State<MapScreen> {
                         metro = '';
                         selectedTypes = {};
                         onlyFree = false;
+                        selectedBuckets = {};
                         minPriceCtrl.clear(); maxPriceCtrl.clear();
                         minAreaCtrl.clear();  maxAreaCtrl.clear();
                         metroCtrl.clear();
@@ -7236,6 +7242,59 @@ class MapScreenState extends State<MapScreen> {
                 ),
                 const SizedBox(height: 12),
 
+                // ── Оценка соответствия ────────────────────────────────
+                if (hasScoring) ...[
+                  const Text('Оценка соответствия',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _scoreBucketButton(
+                          label: 'Низкая',
+                          range: '0–40',
+                          color: const Color(0xFFEF4444),
+                          selected: selectedBuckets.contains(ScoreBucket.low),
+                          onTap: () => setSheet(() {
+                            selectedBuckets.contains(ScoreBucket.low)
+                                ? selectedBuckets.remove(ScoreBucket.low)
+                                : selectedBuckets.add(ScoreBucket.low);
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _scoreBucketButton(
+                          label: 'Средняя',
+                          range: '40–80',
+                          color: const Color(0xFFF59E0B),
+                          selected: selectedBuckets.contains(ScoreBucket.medium),
+                          onTap: () => setSheet(() {
+                            selectedBuckets.contains(ScoreBucket.medium)
+                                ? selectedBuckets.remove(ScoreBucket.medium)
+                                : selectedBuckets.add(ScoreBucket.medium);
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _scoreBucketButton(
+                          label: 'Высокая',
+                          range: '80+',
+                          color: const Color(0xFF22C55E),
+                          selected: selectedBuckets.contains(ScoreBucket.high),
+                          onTap: () => setSheet(() {
+                            selectedBuckets.contains(ScoreBucket.high)
+                                ? selectedBuckets.remove(ScoreBucket.high)
+                                : selectedBuckets.add(ScoreBucket.high);
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 // ── Только свободные ───────────────────────────────────
                 Container(
                   decoration: BoxDecoration(
@@ -7268,6 +7327,7 @@ class MapScreenState extends State<MapScreen> {
                         metroStation: metro.isEmpty ? null : metro,
                         propertyTypes: selectedTypes,
                         onlyFree: onlyFree,
+                        scoreBuckets: selectedBuckets,
                       ));
                     },
                     style: ElevatedButton.styleFrom(
@@ -7313,6 +7373,57 @@ class MapScreenState extends State<MapScreen> {
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(color: Color(0xFFFF8C00), width: 1.5)),
+      ),
+    );
+  }
+
+  Widget _scoreBucketButton({
+    required String label,
+    required String range,
+    required Color color,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: selected ? color : color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : color.withValues(alpha: 0.45),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : color,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                range,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.9)
+                      : color.withValues(alpha: 0.85),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -7545,7 +7656,7 @@ class MapScreenState extends State<MapScreen> {
                               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))],
                             ),
                             child: Text(
-                              '${_activeFilter.apply(_allProperties).length} из ${_allProperties.length}',
+                              '${_activeFilter.apply(_allProperties, scoreOf: (id) => _scoreCache[id]?.totalScore).length} из ${_allProperties.length}',
                               style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ),
