@@ -8,10 +8,10 @@ class MyApplicationsScreen extends StatefulWidget {
   const MyApplicationsScreen({super.key});
 
   @override
-  State<MyApplicationsScreen> createState() => _MyApplicationsScreenState();
+  State<MyApplicationsScreen> createState() => MyApplicationsScreenState();
 }
 
-class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
+class MyApplicationsScreenState extends State<MyApplicationsScreen> {
   final ApplicationService _applicationService = ApplicationService();
   late Future<List<ApplicationModel>> _applicationsFuture;
   final Color _primaryOrange = const Color(0xFFFF8C00);
@@ -24,13 +24,17 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadApplications();
+    _applicationsFuture = _applicationService.getMyApplications();
   }
 
-  void _loadApplications() {
+  // Публичный — вызывается извне (при переключении на вкладку «Заявки»),
+  // а также pull-to-refresh внутри экрана.
+  Future<void> loadApplications() async {
+    final future = _applicationService.getMyApplications();
     setState(() {
-      _applicationsFuture = _applicationService.getMyApplications();
+      _applicationsFuture = future;
     });
+    await future;
   }
 
   // Метод для перевода статуса на русский и выбора цвета
@@ -208,13 +212,27 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
           } else if (snapshot.hasError) {
             return const Center(child: Text('Ошибка при загрузке данных'));
           } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+            return RefreshIndicator(
+              color: _primaryOrange,
+              onRefresh: loadApplications,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
-                  Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[300]),
-                  const SizedBox(height: 16),
-                  const Text('У вас пока нет заявок', style: TextStyle(color: Colors.grey, fontSize: 18)),
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          const Text('У вас пока нет заявок', style: TextStyle(color: Colors.grey, fontSize: 18)),
+                          const SizedBox(height: 8),
+                          const Text('Потяните вниз, чтобы обновить', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
@@ -224,13 +242,25 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
           final applications = _applyFilters(snapshot.data!);
 
           if (applications.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+            return RefreshIndicator(
+              color: _primaryOrange,
+              onRefresh: loadApplications,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
-                  Icon(Icons.search_off, size: 80, color: Colors.grey[300]),
-                  const SizedBox(height: 16),
-                  const Text('По вашим фильтрам ничего не найдено', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, size: 80, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          const Text('По вашим фильтрам ничего не найдено', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
@@ -238,11 +268,7 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
 
           return RefreshIndicator(
             color: _primaryOrange,
-            onRefresh: () async {
-              setState(() {
-                _applicationsFuture = _applicationService.getMyApplications();
-              });
-            },
+            onRefresh: loadApplications,
             child: ListView.separated(
               padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 100),
               itemCount: applications.length,
@@ -285,9 +311,7 @@ class _MyApplicationsScreenState extends State<MyApplicationsScreen> {
                   onDismissed: (direction) async {
                     final success = await _applicationService.deleteApplication(app.id);
                     if (success) {
-                      setState(() {
-                        _applicationsFuture = _applicationService.getMyApplications();
-                      });
+                      await loadApplications();
                     }
                   },
                   child: Container(

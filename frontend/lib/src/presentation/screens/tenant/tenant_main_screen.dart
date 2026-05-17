@@ -23,12 +23,15 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
   final GlobalKey<FavoritesScreenState> _favoritesKey = GlobalKey<FavoritesScreenState>();
   // Ключ к стейту карты — чтобы подхватывать новые проекты поиска без перезапуска.
   final GlobalKey<MapScreenState> _mapKey = GlobalKey<MapScreenState>();
+  // Ключ к стейту «Заявки» — чтобы свеже-отправленная заявка появлялась
+  // в списке без перезахода в приложение.
+  final GlobalKey<MyApplicationsScreenState> _applicationsKey = GlobalKey<MyApplicationsScreenState>();
 
   // Список экранов для каждой вкладки
   late final List<Widget> _screens = [
     MapScreen(key: _mapKey),
     FavoritesScreen(key: _favoritesKey),
-    const MyApplicationsScreen(),
+    MyApplicationsScreen(key: _applicationsKey),
     const SearchProfilesScreen(),
     const ProfileScreen(),
   ];
@@ -95,6 +98,11 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
         // чтобы свежедобавленные помещения были видны без перезапуска.
         if (index == 1) {
           _favoritesKey.currentState?.loadFavorites();
+        }
+        // При переходе на "Заявки" — перетягиваем список с сервера,
+        // чтобы только что отправленная заявка появилась без перезахода.
+        if (index == 2) {
+          _applicationsKey.currentState?.loadApplications();
         }
         // При возврате на карту — подтягиваем свежий список проектов поиска,
         // чтобы dropdown "Выбрать проект поиска" появлялся сразу после
