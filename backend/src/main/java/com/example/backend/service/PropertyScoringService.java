@@ -1,10 +1,10 @@
 package com.example.backend.service;
 
+import com.example.backend.dto.ScoreBreakdown;
 import com.example.backend.dto.ScoredPropertyDto;
 import com.example.backend.entity.BusinessCategory;
 import com.example.backend.entity.Property;
 import com.example.backend.entity.SearchProfile;
-import com.example.backend.entity.enums.RepairState;
 import com.example.backend.repository.BusinessCategoryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,12 +15,16 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Скоринг помещений по четырём компонентам (итого 0–100 баллов):
+ * Скоринг помещений по пяти компонентам (итого 0–100 баллов):
  *
- *   Финансовый мэтч   0–30  — площадь и бюджет
- *   Технический мэтч  0–20  — 8 критериев + ремонт
- *   Конкуренты        0–30  — все организации в радиусе через Overpass API
- *   Синергия          0–20  — соседство с желаемыми категориями
+ *   Финансовый мэтч   0–20  — площадь и бюджет, асимметричная гладкая функция
+ *   Технический мэтч  0–20  — градиентные штрафы за дефицит мощности/потолков,
+ *                              half-penalty при null-полях landlord'a
+ *   Конкуренты        0–40  — все организации в радиусе через Overpass API,
+ *                              distance-weighted exp decay
+ *   Синергия          0–15  — соседство с желаемыми категориями, distance-aware
+ *   Транспорт         0–5   — близость общественного транспорта (метро ценнее
+ *                              автобуса), distance-weighted exp decay
  *
  * Источник данных о соседях — OpenStreetMap через Overpass API.
  * Один запрос на помещение возвращает ВСЕ организации в радиусе с их
@@ -39,10 +43,35 @@ public class PropertyScoringService {
     private final OverpassPlacesService overpassPlacesService;
     private final BusinessCategoryRepository businessCategoryRepository;
 
-    private static final int MAX_FINANCIAL_SCORE   = 30;
+    private static final int MAX_FINANCIAL_SCORE   = 20;
     private static final int MAX_TECHNICAL_SCORE   = 20;
-    private static final int MAX_COMPETITOR_SCORE  = 30;
-    private static final int MAX_SYNERGY_SCORE     = 20;
+    private static final int MAX_COMPETITOR_SCORE  = 40;
+    private static final int MAX_SYNERGY_SCORE     = 15;
+    private static final int MAX_TRANSPORT_SCORE   = 5;
+
+    // --- Транспорт: характерная пешеходная дистанция ---
+    // σ_transport = 500м. Метро в 0м → 5; в 250м → 3.0; в 500м → 1.8; в 1км → 0.7.
+    // Для автобуса дистанция умножается на 2.0 (см. TransportType.distancePenalty).
+    private static final double TRANSPORT_SIGMA_METERS = 500.0;
+    // Радиус поиска транспорта фиксирован: бизнес-радиус арендатора может быть
+    // мал (например 300м), а ближайшая станция — в 800м. Для UX важнее знать
+    // «есть ли метро поблизости вообще», чем рассчитывать строго по фильтру.
+    private static final int TRANSPORT_SEARCH_RADIUS_METERS = 1500;
+
+    // --- Финансовый блок: half / half между бюджетом и площадью ---
+    private static final double BUDGET_AXIS_MAX = 10.0;
+    private static final double AREA_AXIS_MAX   = 10.0;
+    // Жёсткость спада, когда цена превышает бюджет. +20% → ~5.5, +50% → ~2.2.
+    private static final double BUDGET_OVER_DECAY = 3.0;
+    // Площадь ниже минимума — жёсткий decay (бизнес может не влезть).
+    private static final double AREA_UNDER_DECAY  = 4.0;
+    // Площадь выше максимума — мягкий decay (платят за лишние м², но рабочее).
+    private static final double AREA_OVER_DECAY   = 1.5;
+
+    // --- Технический блок: половинный штраф при «неизвестно» ---
+    private static final double UNKNOWN_FIELD_PENALTY_FACTOR = 0.5;
+    // Полностью «провалить» по потолкам должно при дефиците ≥ этой величины (м).
+    private static final double CEILING_FULL_PENALTY_DEFICIT_M = 0.3;
 
     // --- Параметры алгоритма distance-aware скоринга соседей ---
     // Характерная дистанция decay'a берётся как radius / SIGMA_DIVISOR. При
@@ -85,96 +114,305 @@ public class PropertyScoringService {
 
     private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
                                              Map<String, List<BusinessCategory>> tagIndex) {
-        int financial = calculateFinancialScore(profile, property);
-        int technical = calculateTechnicalScore(profile, property);
+        FinancialResult financial = calculateFinancial(profile, property);
+        TechnicalResult technical = calculateTechnical(profile, property);
         NeighborhoodResult neighborhood = analyzeNeighborhood(profile, property, tagIndex);
-        int total = financial + technical + neighborhood.competitorScore() + neighborhood.synergyScore();
+        TransportResult transport = calculateTransport(property);
 
-        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}, syn={}",
-                property.getId(), total, financial, technical,
-                neighborhood.competitorScore(), neighborhood.synergyScore());
+        int total = financial.score() + technical.score()
+                  + neighborhood.competitorScore() + neighborhood.synergyScore()
+                  + transport.score();
+
+        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}, syn={}, trans={}",
+                property.getId(), total, financial.score(), technical.score(),
+                neighborhood.competitorScore(), neighborhood.synergyScore(), transport.score());
+
+        ScoreBreakdown breakdown = ScoreBreakdown.builder()
+                .financial(financial.part())
+                .technical(technical.part())
+                .competitor(neighborhood.competitorPart())
+                .synergy(neighborhood.synergyPart())
+                .transport(transport.part())
+                .build();
 
         return ScoredPropertyDto.builder()
                 .property(property)
                 .totalScore(total)
-                .financialScore(financial)
-                .technicalScore(technical)
+                .financialScore(financial.score())
+                .technicalScore(technical.score())
                 .competitorScore(neighborhood.competitorScore())
                 .synergyScore(neighborhood.synergyScore())
+                .transportScore(transport.score())
                 .directCompetitorNames(neighborhood.directNames())
                 .indirectCompetitorNames(neighborhood.indirectNames())
                 .synergyNeighborNames(neighborhood.synergyNames())
                 .matchLabel(resolveMatchLabel(total))
                 .matchColor(resolveMatchColor(total))
+                .breakdown(breakdown)
                 .build();
     }
 
+    private record FinancialResult(int score, ScoreBreakdown.FinancialPart part) {}
+    private record TechnicalResult(int score, ScoreBreakdown.TechnicalPart part) {}
+    private record TransportResult(int score, ScoreBreakdown.TransportPart part) {}
+
     // =========================================================================
-    //  КОМПОНЕНТ 1: Финансовый мэтч (0–30 баллов)
+    //  КОМПОНЕНТ 1: Финансовый мэтч (0–20 баллов)
+    //
+    //  Две независимые оси по 10 баллов: бюджет и площадь.
+    //
+    //  Бюджет (0–10):
+    //    цена ≤ maxBudget  → 10 (включая «дешевле минимума» — это плюс)
+    //    цена > maxBudget  → 10 · exp(-3 · over_ratio),  over_ratio = (p-max)/max
+    //                        +10% → 7.4, +20% → 5.5, +50% → 2.2, +100% → 0.5
+    //
+    //  Площадь (0–10):
+    //    area ∈ [min, max]    → 10
+    //    area < minArea       → 10 · exp(-4 · deficit),   жёстче (не влезет)
+    //                           -5% → 8.2, -20% → 4.5, -50% → 1.4
+    //    area > maxArea       → 10 · exp(-1.5 · over),    мягче (платят за лишнее)
+    //                           +10% → 8.6, +50% → 4.7, +100% → 2.2
     // =========================================================================
 
-    private int calculateFinancialScore(SearchProfile profile, Property property) {
-        int score = 0;
+    private FinancialResult calculateFinancial(SearchProfile profile, Property property) {
+        BudgetEval b = evalBudget(profile, property);
+        AreaEval a = evalArea(profile, property);
+        int total = Math.max(0, Math.min((int) Math.round(b.points + a.points), MAX_FINANCIAL_SCORE));
+        ScoreBreakdown.FinancialPart part = ScoreBreakdown.FinancialPart.builder()
+                .budgetPoints(round1(b.points))
+                .budgetReason(b.reason)
+                .areaPoints(round1(a.points))
+                .areaReason(a.reason)
+                .build();
+        return new FinancialResult(total, part);
+    }
 
-        if (property.getAreaSqm() != null) {
-            if (isInRange(property.getAreaSqm(), profile.getMinArea(), profile.getMaxArea())) {
-                score += 15;
-            } else {
-                score += partialScore(property.getAreaSqm(), profile.getMinArea(), profile.getMaxArea(), 15);
+    private record BudgetEval(double points, String reason) {}
+    private record AreaEval(double points, String reason) {}
+
+    private BudgetEval evalBudget(SearchProfile profile, Property property) {
+        BigDecimal price = property.getPricePerMonth();
+        if (price == null) return new BudgetEval(0.0, "цена не указана");
+        BigDecimal max = profile.getMaxBudget();
+        BigDecimal min = profile.getMinBudget();
+        if (max == null || price.compareTo(max) <= 0) {
+            if (min != null && price.compareTo(min) < 0) {
+                return new BudgetEval(BUDGET_AXIS_MAX, "цена " + price + " ₽/мес ниже минимума " + min + " — это плюс");
             }
+            return new BudgetEval(BUDGET_AXIS_MAX, "цена " + price + " ₽/мес в бюджете");
         }
+        double overRatio = price.subtract(max).doubleValue() / max.doubleValue();
+        double points = BUDGET_AXIS_MAX * Math.exp(-BUDGET_OVER_DECAY * overRatio);
+        return new BudgetEval(points,
+                String.format("цена %s ₽/мес выше max %s на %.0f%%", price, max, overRatio * 100));
+    }
 
-        if (property.getPricePerMonth() != null) {
-            if (isInRange(property.getPricePerMonth(), profile.getMinBudget(), profile.getMaxBudget())) {
-                score += 15;
-            } else {
-                score += partialScore(property.getPricePerMonth(), profile.getMinBudget(), profile.getMaxBudget(), 15);
-            }
+    private AreaEval evalArea(SearchProfile profile, Property property) {
+        BigDecimal area = property.getAreaSqm();
+        if (area == null) return new AreaEval(0.0, "площадь не указана");
+        BigDecimal min = profile.getMinArea();
+        BigDecimal max = profile.getMaxArea();
+        if (min != null && area.compareTo(min) < 0) {
+            double deficit = min.subtract(area).doubleValue() / min.doubleValue();
+            double points = AREA_AXIS_MAX * Math.exp(-AREA_UNDER_DECAY * deficit);
+            return new AreaEval(points,
+                    String.format("площадь %s м² меньше min %s на %.0f%%", area, min, deficit * 100));
         }
-
-        return Math.min(score, MAX_FINANCIAL_SCORE);
+        if (max != null && area.compareTo(max) > 0) {
+            double overRatio = area.subtract(max).doubleValue() / max.doubleValue();
+            double points = AREA_AXIS_MAX * Math.exp(-AREA_OVER_DECAY * overRatio);
+            return new AreaEval(points,
+                    String.format("площадь %s м² больше max %s на %.0f%%", area, max, overRatio * 100));
+        }
+        return new AreaEval(AREA_AXIS_MAX, "площадь " + area + " м² в диапазоне");
     }
 
     // =========================================================================
     //  КОМПОНЕНТ 2: Технический мэтч (0–20 баллов)
+    //
+    //  Принципы:
+    //   - Булевы требования (вода, вентиляция, WC и т.д.) штрафуются на полный
+    //     вес при FALSE и на половину при null — «не указано» ≠ «отсутствует».
+    //   - Мощность и потолки — градиентные штрафы, пропорциональные дефициту:
+    //       power_deficit  = 1 - actual/required    (clamped в [0,1])
+    //       ceiling_deficit_factor = min(1, (req - actual) / 0.3 м)
+    //     Близкое к норме значение почти не штрафуется, сильное отклонение —
+    //     до полного веса.
+    //   - SHELL_AND_CORE больше не даёт безусловного штрафа: состояние ремонта
+    //     не пересекается с требованиями профиля, и универсальный минус был
+    //     просто шумом в скоринге.
     // =========================================================================
 
-    private int calculateTechnicalScore(SearchProfile profile, Property property) {
-        int score = MAX_TECHNICAL_SCORE;
+    private TechnicalResult calculateTechnical(SearchProfile profile, Property property) {
+        List<ScoreBreakdown.TechnicalItem> items = new ArrayList<>();
+        double score = MAX_TECHNICAL_SCORE;
 
-        if (Boolean.TRUE.equals(profile.getRequiresWater()) && !Boolean.TRUE.equals(property.getHasWater()))
-            score -= 4;
-        if (Boolean.TRUE.equals(profile.getRequiresVentilation()) && !Boolean.TRUE.equals(property.getHasVentilation()))
-            score -= 4;
-        if (Boolean.TRUE.equals(profile.getRequiresSeparateEntrance()) && !Boolean.TRUE.equals(property.getHasSeparateEntrance()))
-            score -= 3;
-        if (profile.getMinPowerKw() != null && profile.getMinPowerKw() > 0) {
-            int power = property.getPowerKw() != null ? property.getPowerKw() : 0;
-            if (power < profile.getMinPowerKw()) score -= 3;
+        score -= addBoolItem(items, "вода",            profile.getRequiresWater(),            property.getHasWater(),            4);
+        score -= addBoolItem(items, "вытяжка",         profile.getRequiresVentilation(),      property.getHasVentilation(),      4);
+        score -= addBoolItem(items, "отдельный вход",  profile.getRequiresSeparateEntrance(), property.getHasSeparateEntrance(), 3);
+        score -= addBoolItem(items, "санузел",         profile.getRequiresWc(),               property.getHasWc(),               3);
+        score -= addBoolItem(items, "парковка",        profile.getRequiresParking(),          property.getHasParking(),          2);
+        score -= addBoolItem(items, "зона разгрузки",  profile.getRequiresLoadingZone(),      property.getHasLoadingZone(),      2);
+        score -= addPowerItem(items, profile.getMinPowerKw(), property.getPowerKw());
+        score -= addCeilingItem(items, profile.getMinCeilingHeight(), property.getCeilingHeight());
+
+        int total = (int) Math.round(Math.max(0, score));
+        ScoreBreakdown.TechnicalPart part = ScoreBreakdown.TechnicalPart.builder()
+                .items(items)
+                .build();
+        return new TechnicalResult(total, part);
+    }
+
+    private double addBoolItem(List<ScoreBreakdown.TechnicalItem> items, String label,
+                               Boolean required, Boolean actual, double full) {
+        if (!Boolean.TRUE.equals(required)) return 0;
+        double penalty;
+        String reason;
+        if (Boolean.TRUE.equals(actual)) {
+            return 0;
+        } else if (actual == null) {
+            penalty = full * UNKNOWN_FIELD_PENALTY_FACTOR;
+            reason  = "не указано (половина штрафа)";
+        } else {
+            penalty = full;
+            reason  = "отсутствует";
         }
-        if (Boolean.TRUE.equals(profile.getRequiresWc()) && !Boolean.TRUE.equals(property.getHasWc()))
-            score -= 3;
-        if (Boolean.TRUE.equals(profile.getRequiresParking()) && !Boolean.TRUE.equals(property.getHasParking()))
-            score -= 2;
-        if (Boolean.TRUE.equals(profile.getRequiresLoadingZone()) && !Boolean.TRUE.equals(property.getHasLoadingZone()))
-            score -= 2;
-        if (profile.getMinCeilingHeight() != null && property.getCeilingHeight() != null
-                && property.getCeilingHeight().compareTo(profile.getMinCeilingHeight()) < 0)
-            score -= 2;
+        items.add(ScoreBreakdown.TechnicalItem.builder()
+                .requirement(label).penalty(round1(penalty)).reason(reason).build());
+        return penalty;
+    }
 
-        if (property.getRepairState() == RepairState.SHELL_AND_CORE) score -= 1;
+    private double addPowerItem(List<ScoreBreakdown.TechnicalItem> items, Integer required, Integer actual) {
+        if (required == null || required.intValue() <= 0) return 0;
+        double penalty;
+        String reason;
+        int req = required.intValue();
+        if (actual == null) {
+            penalty = 3.0 * UNKNOWN_FIELD_PENALTY_FACTOR;
+            reason  = "мощность не указана (требовалось от " + req + " кВт)";
+        } else {
+            int act = actual.intValue();
+            if (act >= req) return 0;
+            double deficit = 1.0 - ((double) act / req);
+            penalty = 3.0 * Math.min(1.0, Math.max(0.0, deficit));
+            reason  = String.format("дефицит %.0f%% (%d из %d кВт)", deficit * 100, act, req);
+        }
+        items.add(ScoreBreakdown.TechnicalItem.builder()
+                .requirement("мощность").penalty(round1(penalty)).reason(reason).build());
+        return penalty;
+    }
 
-        return Math.max(score, 0);
+    private double addCeilingItem(List<ScoreBreakdown.TechnicalItem> items,
+                                  BigDecimal required, BigDecimal actual) {
+        if (required == null) return 0;
+        double penalty;
+        String reason;
+        if (actual == null) {
+            penalty = 2.0 * UNKNOWN_FIELD_PENALTY_FACTOR;
+            reason  = "высота потолков не указана (требовалось от " + required + " м)";
+        } else if (actual.compareTo(required) >= 0) {
+            return 0;
+        } else {
+            double deficitMeters = required.subtract(actual).doubleValue();
+            double factor = Math.min(1.0, deficitMeters / CEILING_FULL_PENALTY_DEFICIT_M);
+            penalty = 2.0 * factor;
+            reason  = String.format("потолки %s м ниже требуемых %s м (дефицит %.2f м)",
+                    actual, required, deficitMeters);
+        }
+        items.add(ScoreBreakdown.TechnicalItem.builder()
+                .requirement("потолки").penalty(round1(penalty)).reason(reason).build());
+        return penalty;
+    }
+
+    private static double round1(double v) {
+        return Math.round(v * 10.0) / 10.0;
+    }
+
+    // =========================================================================
+    //  КОМПОНЕНТ 5: Транспортный мэтч (0–5 баллов)
+    //
+    //  effective_distance = closest_stop.distance * type.distancePenalty
+    //  score = 5 * exp(-effective_distance / σ_transport)
+    //
+    //  σ_transport = 500м. Метро/жд: penalty = 1.0; трамвай: 1.4; автобус: 2.0.
+    //  Пример: метро в 250м → ~3.0/5; автобус в 250м → effective 500м → ~1.8/5.
+    // =========================================================================
+
+    private TransportResult calculateTransport(Property property) {
+        if (property.getLatitude() == null || property.getLongitude() == null) {
+            return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
+                    .nearestType("NONE")
+                    .nearestDistanceMeters(-1)
+                    .reason("у помещения нет координат")
+                    .build());
+        }
+
+        double lat = property.getLatitude().doubleValue();
+        double lon = property.getLongitude().doubleValue();
+        List<TransportStop> stops = overpassPlacesService.searchTransportNearby(
+                lat, lon, TRANSPORT_SEARCH_RADIUS_METERS);
+
+        if (stops.isEmpty()) {
+            return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
+                    .nearestType("NONE")
+                    .nearestDistanceMeters(-1)
+                    .reason("в радиусе " + TRANSPORT_SEARCH_RADIUS_METERS + "м не найдено остановок")
+                    .build());
+        }
+
+        TransportStop best = null;
+        double bestEffective = Double.MAX_VALUE;
+        double bestRealDistance = 0;
+        for (TransportStop stop : stops) {
+            if (stop.lat() == 0.0 && stop.lon() == 0.0) continue;
+            double d = haversineMeters(lat, lon, stop.lat(), stop.lon());
+            double eff = d * stop.type().getDistancePenalty();
+            if (eff < bestEffective) {
+                bestEffective = eff;
+                bestRealDistance = d;
+                best = stop;
+            }
+        }
+        if (best == null) {
+            return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
+                    .nearestType("NONE")
+                    .nearestDistanceMeters(-1)
+                    .reason("остановки найдены, но без координат")
+                    .build());
+        }
+
+        double pointsD = MAX_TRANSPORT_SCORE * Math.exp(-bestEffective / TRANSPORT_SIGMA_METERS);
+        int points = Math.max(0, Math.min(MAX_TRANSPORT_SCORE, (int) Math.round(pointsD)));
+
+        String typeLabel = switch (best.type()) {
+            case METRO -> "метро";
+            case RAIL  -> "ж/д";
+            case TRAM  -> "трамвай";
+            case BUS   -> "автобус";
+        };
+        String reason = String.format("%s «%s» в %.0f м (бонус %d/%d)",
+                typeLabel, best.name(), bestRealDistance, points, MAX_TRANSPORT_SCORE);
+
+        log.info("[TRANSPORT] property={}: nearest={} type={} distance={}м effective={}м → {}/{}",
+                property.getId(), best.name(), best.type(),
+                (int) bestRealDistance, (int) bestEffective, points, MAX_TRANSPORT_SCORE);
+
+        return new TransportResult(points, ScoreBreakdown.TransportPart.builder()
+                .nearestName(best.name())
+                .nearestType(best.type().name())
+                .nearestDistanceMeters(Math.round(bestRealDistance))
+                .reason(reason)
+                .build());
     }
 
     // =========================================================================
     //  КОМПОНЕНТ 3 + 4: Анализ окрестности через Overpass API
     //
-    //  Конкуренты (0–30 баллов) — distance-aware smooth decay:
+    //  Конкуренты (0–40 баллов) — distance-aware smooth decay:
     //    weight_i = exp(-distance_i / σ),  σ = radius / 3
     //    weightedDirect   = Σ weight_i по прямым конкурентам
     //    weightedIndirect = Σ weight_i по косвенным
-    //    competitorScore  = 30 * exp(-1.0 * weightedDirect - 0.3 * weightedIndirect)
+    //    competitorScore  = 40 * exp(-1.0 * weightedDirect - 0.3 * weightedIndirect)
     //
     //  Почему так, а не step-функция: в Москве в радиусе 1км может быть 50+
     //  организаций той же категории, и прежняя «5+ direct = 0» обнуляла все
@@ -182,9 +420,9 @@ public class PropertyScoringService {
     //  ~23/30, 5 близких (по 50м) — ~1/30, а абсолютные числа не клипают
     //  значение в 0.
     //
-    //  Синергия (0–20 баллов) — distance-aware:
+    //  Синергия (0–15 баллов) — distance-aware:
     //    Для каждой желаемой категории берём максимум веса по найденным POI,
-    //    усредняем по всем желаемым категориям, домножаем на 20.
+    //    усредняем по всем желаемым категориям, домножаем на 15.
     //    Сосед через дорогу теперь весит больше, чем через 1 км.
     // =========================================================================
 
@@ -193,7 +431,9 @@ public class PropertyScoringService {
             List<String> directNames,
             List<String> indirectNames,
             int synergyScore,
-            List<String> synergyNames
+            List<String> synergyNames,
+            ScoreBreakdown.CompetitorPart competitorPart,
+            ScoreBreakdown.SynergyPart synergyPart
     ) {}
 
     private NeighborhoodResult analyzeNeighborhood(SearchProfile profile, Property property,
@@ -201,8 +441,14 @@ public class PropertyScoringService {
         if (profile.getBusinessCategory() == null
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
+            ScoreBreakdown.CompetitorPart cp = ScoreBreakdown.CompetitorPart.builder()
+                    .directRefs(List.of()).indirectRefs(List.of())
+                    .totalNearbyBusinesses(0).radiusMeters(0)
+                    .build();
+            ScoreBreakdown.SynergyPart sp = ScoreBreakdown.SynergyPart.builder()
+                    .refs(List.of()).build();
             return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
-                                          MAX_SYNERGY_SCORE, List.of());
+                                          MAX_SYNERGY_SCORE, List.of(), cp, sp);
         }
 
         int radius = profile.getSearchRadiusMeters() != null
@@ -238,10 +484,19 @@ public class PropertyScoringService {
         if (nearbyBusinesses.isEmpty()) {
             int synergyEmpty = desiredNeighborIds.isEmpty() ? MAX_SYNERGY_SCORE : 0;
             log.warn("[COMP-EMPTY] property={}: Overpass не вернул ни одной организации " +
-                            "(target='{}', desired={}). Балл по умолчанию 30/30.",
-                    property.getId(), target.getName(), desiredNeighborIds.size());
+                            "(target='{}', desired={}). Балл по умолчанию {}/{}.",
+                    property.getId(), target.getName(), desiredNeighborIds.size(),
+                    MAX_COMPETITOR_SCORE, MAX_COMPETITOR_SCORE);
+            ScoreBreakdown.CompetitorPart cp = ScoreBreakdown.CompetitorPart.builder()
+                    .directRefs(List.of()).indirectRefs(List.of())
+                    .totalNearbyBusinesses(0).radiusMeters(radius)
+                    .build();
+            ScoreBreakdown.SynergyPart sp = ScoreBreakdown.SynergyPart.builder()
+                    .desiredCategoriesCount(desiredNeighborIds.size())
+                    .foundCategoriesCount(0)
+                    .refs(List.of()).build();
             return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
-                                          synergyEmpty, List.of());
+                                          synergyEmpty, List.of(), cp, sp);
         }
 
         // ------- Классификация: direct / indirect / synergy с distance-aware весами -------
@@ -251,12 +506,11 @@ public class PropertyScoringService {
         double weightedIndirect = 0.0;
         long directCount   = 0;
         long indirectCount = 0;
-        // (name, weight) — пригодится отсортировать по близости для UI/AI.
-        List<NamedWeight> directRanked   = new ArrayList<>();
-        List<NamedWeight> indirectRanked = new ArrayList<>();
-        // Для синергии: max(weight) по каждой желаемой категории.
-        Map<Long, Double> synergyMaxWeight = new LinkedHashMap<>();
-        Map<Long, String> synergyBestName  = new LinkedHashMap<>();
+        // {name, distance, weight} для UI/AI: сортируем по близости.
+        List<ScoreBreakdown.CompetitorRef> directRanked   = new ArrayList<>();
+        List<ScoreBreakdown.CompetitorRef> indirectRanked = new ArrayList<>();
+        // Для синергии: лучший (max weight) кандидат по каждой желаемой категории.
+        Map<Long, ScoreBreakdown.SynergyRef> synergyBest = new LinkedHashMap<>();
 
         for (NearbyBusiness business : nearbyBusinesses) {
             boolean isDirect   = false;
@@ -304,32 +558,38 @@ public class PropertyScoringService {
                 }
             }
 
+            double distanceMeters = (business.lat() == 0.0 && business.lon() == 0.0)
+                    ? -1.0
+                    : haversineMeters(lat, lon, business.lat(), business.lon());
             double weight = distanceWeight(lat, lon, business, sigma);
 
             if (isDirect) {
                 directCount++;
                 weightedDirect += weight;
-                directRanked.add(new NamedWeight(business.name(), weight));
+                directRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight));
             } else if (isIndirect) {
                 indirectCount++;
                 weightedIndirect += weight;
-                indirectRanked.add(new NamedWeight(business.name(), weight));
+                indirectRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight));
             }
 
             for (Long catId : synergyMatchesForBusiness) {
-                Double prev = synergyMaxWeight.get(catId);
-                if (prev == null || weight > prev) {
-                    synergyMaxWeight.put(catId, weight);
-                    synergyBestName.put(catId, business.name());
+                ScoreBreakdown.SynergyRef prev = synergyBest.get(catId);
+                if (prev == null || weight > prev.getWeight()) {
+                    synergyBest.put(catId, ScoreBreakdown.SynergyRef.builder()
+                            .name(business.name())
+                            .distanceMeters(distanceMeters < 0 ? -1 : Math.round(distanceMeters))
+                            .weight(round2(weight))
+                            .build());
                 }
             }
         }
 
-        // Сортировка имён по близости: ближайший конкурент первым.
-        directRanked.sort(Comparator.comparingDouble((NamedWeight nw) -> nw.weight).reversed());
-        indirectRanked.sort(Comparator.comparingDouble((NamedWeight nw) -> nw.weight).reversed());
-        List<String> directNames   = directRanked.stream().map(NamedWeight::name).collect(Collectors.toList());
-        List<String> indirectNames = indirectRanked.stream().map(NamedWeight::name).collect(Collectors.toList());
+        // Сортировка по близости: ближайший конкурент первым.
+        directRanked.sort(Comparator.comparingDouble(ScoreBreakdown.CompetitorRef::getWeight).reversed());
+        indirectRanked.sort(Comparator.comparingDouble(ScoreBreakdown.CompetitorRef::getWeight).reversed());
+        List<String> directNames   = directRanked.stream().map(ScoreBreakdown.CompetitorRef::getName).collect(Collectors.toList());
+        List<String> indirectNames = indirectRanked.stream().map(ScoreBreakdown.CompetitorRef::getName).collect(Collectors.toList());
 
         log.info("[COMP-SCORE] property={}: прямых={} (вес={}), косвенных={} (вес={}), всего бизнесов в радиусе={}, σ={}м",
                 property.getId(),
@@ -354,28 +614,57 @@ public class PropertyScoringService {
 
         int synergyScore;
         List<String> synergyNames = new ArrayList<>();
+        List<ScoreBreakdown.SynergyRef> synergyRefs = new ArrayList<>();
         if (desiredNeighborIds.isEmpty()) {
             synergyScore = MAX_SYNERGY_SCORE;
         } else {
             double sumMaxWeights = 0.0;
             for (Long catId : desiredNeighborIds) {
-                sumMaxWeights += synergyMaxWeight.getOrDefault(catId, 0.0);
+                ScoreBreakdown.SynergyRef ref = synergyBest.get(catId);
+                sumMaxWeights += ref == null ? 0.0 : ref.getWeight();
             }
             double normalized = sumMaxWeights / desiredNeighborIds.size();
             synergyScore = (int) Math.round(MAX_SYNERGY_SCORE * normalized);
             synergyScore = Math.max(0, Math.min(MAX_SYNERGY_SCORE, synergyScore));
-            // Имена сортируем по убыванию веса — самые близкие соседи первыми.
-            synergyMaxWeight.entrySet().stream()
-                    .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                    .forEach(e -> synergyNames.add(synergyBestName.get(e.getKey())));
+            // Имена и refs сортируем по убыванию веса — ближайшие первыми.
+            synergyBest.values().stream()
+                    .sorted(Comparator.comparingDouble(ScoreBreakdown.SynergyRef::getWeight).reversed())
+                    .forEach(ref -> { synergyNames.add(ref.getName()); synergyRefs.add(ref); });
         }
 
         log.info("[SYNERGY] property={}: желаемых соседей={}, найдено категорий={}, соседи={}, балл={}/{}",
                 property.getId(), desiredNeighborIds.size(),
-                synergyMaxWeight.size(), synergyNames, synergyScore, MAX_SYNERGY_SCORE);
+                synergyBest.size(), synergyNames, synergyScore, MAX_SYNERGY_SCORE);
+
+        ScoreBreakdown.CompetitorPart competitorPart = ScoreBreakdown.CompetitorPart.builder()
+                .weightedDirect(round2(weightedDirect))
+                .weightedIndirect(round2(weightedIndirect))
+                .directRefs(directRanked)
+                .indirectRefs(indirectRanked)
+                .totalNearbyBusinesses(nearbyBusinesses.size())
+                .radiusMeters(radius)
+                .build();
+        ScoreBreakdown.SynergyPart synergyPart = ScoreBreakdown.SynergyPart.builder()
+                .desiredCategoriesCount(desiredNeighborIds.size())
+                .foundCategoriesCount(synergyBest.size())
+                .refs(synergyRefs)
+                .build();
 
         return new NeighborhoodResult(competitorScore, directNames, indirectNames,
-                                      synergyScore, synergyNames);
+                                      synergyScore, synergyNames,
+                                      competitorPart, synergyPart);
+    }
+
+    private ScoreBreakdown.CompetitorRef buildCompetitorRef(String name, double distanceMeters, double weight) {
+        return ScoreBreakdown.CompetitorRef.builder()
+                .name(name)
+                .distanceMeters(distanceMeters < 0 ? -1 : Math.round(distanceMeters))
+                .weight(round2(weight))
+                .build();
+    }
+
+    private static double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 
     /**
@@ -403,8 +692,6 @@ public class PropertyScoringService {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return EARTH_RADIUS_METERS * c;
     }
-
-    private record NamedWeight(String name, double weight) {}
 
     // =========================================================================
     //  HELPERS: индекс OSM-тег → категории
@@ -443,24 +730,6 @@ public class PropertyScoringService {
     // =========================================================================
     //  ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
     // =========================================================================
-
-    private boolean isInRange(BigDecimal value, BigDecimal min, BigDecimal max) {
-        if (min != null && value.compareTo(min) < 0) return false;
-        if (max != null && value.compareTo(max) > 0) return false;
-        return true;
-    }
-
-    private int partialScore(BigDecimal value, BigDecimal min, BigDecimal max, int maxPoints) {
-        if (min != null && value.compareTo(min) < 0) {
-            double ratio = value.doubleValue() / min.doubleValue();
-            if (ratio >= 0.8) return (int) Math.round(maxPoints * ratio * 0.5);
-        }
-        if (max != null && value.compareTo(max) > 0) {
-            double ratio = max.doubleValue() / value.doubleValue();
-            if (ratio >= 0.8) return (int) Math.round(maxPoints * ratio * 0.5);
-        }
-        return 0;
-    }
 
     private String resolveMatchLabel(int score) {
         if (score >= 75) return "🔥 Отличный мэтч!";

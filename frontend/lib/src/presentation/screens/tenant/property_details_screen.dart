@@ -134,10 +134,19 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _scoreBar('Финансовый', scored.financialScore, 30),
+          _scoreBar('Финансовый', scored.financialScore, 20),
           _scoreBar('Технический', scored.technicalScore, 20),
-          _scoreBar('Конкуренты', scored.competitorScore, 30),
-          _scoreBar('Синергия', scored.synergyScore, 20),
+          _scoreBar('Конкуренты', scored.competitorScore, 40),
+          _scoreBar('Синергия', scored.synergyScore, 15),
+          _scoreBar('Транспорт', scored.transportScore, 5),
+          if (scored.breakdown?.transport != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              '5 баллов отведены на доступ к общественному транспорту: '
+              '${scored.breakdown!.transport!.reason ?? scored.breakdown!.transport!.typeLabel}.',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+            ),
+          ],
         ],
       ),
     );

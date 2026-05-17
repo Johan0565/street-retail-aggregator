@@ -7039,10 +7039,20 @@ class MapScreenState extends State<MapScreen> {
               if (scored != null) ...
                 [
                   const SizedBox(height: 12),
-                  _buildScoreBar('Финансы', scored.financialScore, 30),
+                  _buildScoreBar('Финансы', scored.financialScore, 20),
                   _buildScoreBar('Технические', scored.technicalScore, 20),
-                  _buildScoreBar('Конкуренты', scored.competitorScore, 30),
-                  _buildScoreBar('Синергия', scored.synergyScore, 20),
+                  _buildScoreBar('Конкуренты', scored.competitorScore, 40),
+                  _buildScoreBar('Синергия', scored.synergyScore, 15),
+                  _buildScoreBar('Транспорт', scored.transportScore, 5),
+                  if (scored.breakdown?.transport != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '5 баллов отведены на доступ к транспорту: '
+                        '${scored.breakdown!.transport!.reason ?? scored.breakdown!.transport!.typeLabel}.',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                      ),
+                    ),
                 ],
               const SizedBox(height: 20),
               SizedBox(

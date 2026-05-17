@@ -93,7 +93,7 @@ public class OpenRouterAiService {
                 - Последнее предложение: «Итог: N/100, главное ограничение — …» или «Итог: N/100, ограничений по данным алгоритма нет».
 
                 ПРИМЕР ХОРОШЕГО ОТВЕТА (на других данных, много конкурентов):
-                Помещение на Арбате площадью 65 м² за 320 000 ₽/мес попадает в бюджет и площадь полностью. По технике штрафов нет. В радиусе 1 км найдено 22 прямых конкурента — «36,6», «Ригла», «Самсон-фарма», «Горздрав», «Неофарм» и ещё 17, плюс 4 без названия, что по шкале даёт 0/30. По синергии желаемые соседи не заданы, балл по умолчанию 20/20. Итог: 50/100, главное ограничение — высокая плотность прямых конкурентов.
+                Помещение на Арбате площадью 65 м² за 320 000 ₽/мес попадает в бюджет и площадь полностью. По технике штрафов нет. В радиусе 1 км найдено 22 прямых конкурента — «36,6», «Ригла», «Самсон-фарма», «Горздрав», «Неофарм» и ещё 17, плюс 4 без названия, что по шкале даёт 0/30. По синергии желаемые соседи не заданы, балл по умолчанию 20/15. Итог: 50/100, главное ограничение — высокая плотность прямых конкурентов.
 
                 ФАКТЫ:
                 %s
@@ -117,21 +117,37 @@ public class OpenRouterAiService {
           .append(nvl(p.getCeilingHeight())).append(" м, ремонт — ")
           .append(translateRepair(p.getRepairState())).append(".\n");
 
-        sb.append("\nФИНАНСЫ ").append(scored.getFinancialScore()).append("/30:\n");
+        sb.append("\nФИНАНСЫ ").append(scored.getFinancialScore()).append("/20:\n");
         sb.append(buildFinancialBreakdown(p, profile));
 
         sb.append("\nТЕХНИКА ").append(scored.getTechnicalScore()).append("/20:\n");
         sb.append(buildTechnicalBreakdown(p, profile));
 
-        sb.append("\nКОНКУРЕНТЫ ").append(scored.getCompetitorScore()).append("/30:\n");
+        sb.append("\nКОНКУРЕНТЫ ").append(scored.getCompetitorScore()).append("/40:\n");
         sb.append(buildCompetitorBreakdown(scored));
 
-        sb.append("\nСИНЕРГИЯ С СОСЕДЯМИ ").append(scored.getSynergyScore()).append("/20:\n");
+        sb.append("\nСИНЕРГИЯ С СОСЕДЯМИ ").append(scored.getSynergyScore()).append("/15:\n");
         sb.append(buildSynergyBreakdown(scored, profile));
+
+        sb.append("\nТРАНСПОРТ ").append(scored.getTransportScore()).append("/5:\n");
+        sb.append(buildTransportBreakdown(scored));
 
         sb.append("\nИТОГ: ").append(scored.getTotalScore()).append("/100 (")
           .append(nvl(scored.getMatchLabel())).append(").");
         return sb.toString();
+    }
+
+    private String buildTransportBreakdown(ScoredPropertyDto scored) {
+        var breakdown = scored.getBreakdown();
+        if (breakdown == null || breakdown.getTransport() == null) {
+            return "- данные о транспорте недоступны.\n";
+        }
+        var t = breakdown.getTransport();
+        if ("NONE".equals(t.getNearestType()) || t.getNearestDistanceMeters() < 0) {
+            return "- " + nvl(t.getReason()) + "; балл 0/5.\n";
+        }
+        return "- " + nvl(t.getReason()) + ". Из 5 баллов 5 отведены ТОЛЬКО на доступ к транспорту, "
+                + "поэтому общая оценка не может быть выше 95 без близкой остановки.\n";
     }
 
     private String buildSynergyBreakdown(ScoredPropertyDto scored, SearchProfile profile) {
@@ -143,10 +159,10 @@ public class OpenRouterAiService {
             return "- арендатор не указывал желаемых соседей; синергический балл максимальный по умолчанию.\n";
         }
         if (neighbors.isEmpty()) {
-            return "- желаемых соседей рядом не найдено ни одного из " + desired + " категорий; балл 0/20.\n";
+            return "- желаемых соседей рядом не найдено ни одного из " + desired + " категорий; балл 0/15.\n";
         }
         return "- найдены желаемые соседи (" + neighbors.size() + "): "
-                + joinNames(neighbors, 7) + ". Балл " + scored.getSynergyScore() + "/20.\n";
+                + joinNames(neighbors, 7) + ". Балл " + scored.getSynergyScore() + "/15.\n";
     }
 
     private String buildFinancialBreakdown(Property p, SearchProfile profile) {
@@ -174,12 +190,14 @@ public class OpenRouterAiService {
         BigDecimal maxB  = profile.getMaxBudget();
         if (price != null && (minB != null || maxB != null)) {
             String range = formatRange(minB, maxB, "₽");
-            if (inRange(price, minB, maxB))
-                sb.append("- цена ").append(price).append(" ₽/мес укладывается в бюджет ").append(range).append(".\n");
-            else if (maxB != null && price.compareTo(maxB) > 0)
+            if (maxB != null && price.compareTo(maxB) > 0) {
                 sb.append("- цена ").append(price).append(" ₽/мес выше бюджета (макс. ").append(maxB).append(" ₽).\n");
-            else if (minB != null && price.compareTo(minB) < 0)
-                sb.append("- цена ").append(price).append(" ₽/мес ниже нижней границы бюджета (").append(minB).append(" ₽).\n");
+            } else if (minB != null && price.compareTo(minB) < 0) {
+                sb.append("- цена ").append(price).append(" ₽/мес ниже нижней границы бюджета (")
+                  .append(minB).append(" ₽) — это плюс, штрафа нет.\n");
+            } else {
+                sb.append("- цена ").append(price).append(" ₽/мес укладывается в бюджет ").append(range).append(".\n");
+            }
         }
 
         if (sb.length() == 0) sb.append("- финансовые требования арендатором не заданы.\n");
@@ -197,57 +215,84 @@ public class OpenRouterAiService {
         addPenalty(penalties, profile.getRequiresParking(),          p.getHasParking(),          "парковка",        2);
         addPenalty(penalties, profile.getRequiresLoadingZone(),      p.getHasLoadingZone(),      "зона разгрузки",  2);
 
-        if (profile.getMinPowerKw() != null && profile.getMinPowerKw() > 0) {
-            int actual = p.getPowerKw() != null ? p.getPowerKw() : 0;
-            if (actual < profile.getMinPowerKw())
-                penalties.add("- мощности " + actual + " кВт не хватает (требовалось от " + profile.getMinPowerKw() + " кВт), −3.");
+        // Мощность — градиент: штраф пропорционален дефициту, null = половина.
+        Integer requiredPowerBoxed = profile.getMinPowerKw();
+        if (requiredPowerBoxed != null && requiredPowerBoxed.intValue() > 0) {
+            int req = requiredPowerBoxed.intValue();
+            Integer actualBoxed = p.getPowerKw();
+            if (actualBoxed == null) {
+                penalties.add("- мощность не указана арендодателем (требовалось от " + req + " кВт), −1.5 (половина).");
+            } else {
+                int actual = actualBoxed.intValue();
+                if (actual < req) {
+                    double deficit = 1.0 - ((double) actual / req);
+                    double cost = 3.0 * Math.min(1.0, Math.max(0.0, deficit));
+                    penalties.add(String.format("- мощности %d кВт не хватает (требовалось от %d кВт, дефицит %.0f%%), −%.1f.",
+                            actual, req, deficit * 100, cost));
+                }
+            }
         }
-        if (profile.getMinCeilingHeight() != null && p.getCeilingHeight() != null
-                && p.getCeilingHeight().compareTo(profile.getMinCeilingHeight()) < 0)
-            penalties.add("- потолки " + p.getCeilingHeight() + " м ниже требуемых "
-                    + profile.getMinCeilingHeight() + " м, −2.");
-        if (p.getRepairState() == RepairState.SHELL_AND_CORE)
-            penalties.add("- помещение в состоянии \"требует ремонта\", −1.");
+        // Потолки — градиент: каждые недостающие 30 см = полный штраф.
+        if (profile.getMinCeilingHeight() != null) {
+            BigDecimal req = profile.getMinCeilingHeight();
+            BigDecimal actual = p.getCeilingHeight();
+            if (actual == null) {
+                penalties.add("- высота потолков не указана арендодателем (требовалось от " + req + " м), −1 (половина).");
+            } else if (actual.compareTo(req) < 0) {
+                double deficitM = req.subtract(actual).doubleValue();
+                double cost = 2.0 * Math.min(1.0, deficitM / 0.30);
+                penalties.add(String.format("- потолки %s м ниже требуемых %s м (дефицит %.2f м), −%.1f.",
+                        actual, req, deficitM, cost));
+            }
+        }
 
         if (penalties.isEmpty())
             return "- помещение полностью отвечает техническим требованиям арендатора.\n";
         return String.join("\n", penalties) + "\n";
     }
 
+    /**
+     * Бинарный штраф: «нет» → полный, «не указано» → половина (uncertainty discount).
+     */
     private void addPenalty(List<String> out, Boolean required, Boolean has, String name, int cost) {
-        if (Boolean.TRUE.equals(required) && !Boolean.TRUE.equals(has))
+        if (!Boolean.TRUE.equals(required)) return;
+        if (Boolean.TRUE.equals(has)) return;
+        if (has == null) {
+            out.add("- арендатор требовал " + name + ", в помещении не указано, −" + (cost / 2.0) + " (половина).");
+        } else {
             out.add("- арендатор требовал " + name + ", в помещении нет, −" + cost + ".");
+        }
     }
 
     private String buildCompetitorBreakdown(ScoredPropertyDto scored) {
         List<String> direct   = nvlList(scored.getDirectCompetitorNames());
         List<String> indirect = nvlList(scored.getIndirectCompetitorNames());
         int score = scored.getCompetitorScore();
-        int penalty = 30 - score;
+        int penalty = 40 - score;
 
         StringBuilder sb = new StringBuilder();
 
         if (direct.isEmpty() && indirect.isEmpty()) {
-            sb.append("- в радиусе поиска не найдено ни прямых, ни косвенных конкурентов; балл максимальный, 30/30.\n");
+            sb.append("- в радиусе поиска не найдено ни прямых, ни косвенных конкурентов; балл максимальный, 40/40.\n");
             return sb.toString();
         }
 
+        // Имена в списках уже отсортированы по близости (ближайший первым) —
+        // об этом важно сказать AI, чтобы он не врал «5 конкурентов = провал».
         if (!direct.isEmpty()) {
-            sb.append(formatCompetitorLine("прямые конкуренты", direct, 20)).append('\n');
-            sb.append("- по шкале: ").append(scaleRowForDirect(direct.size())).append('\n');
+            sb.append(formatCompetitorLine("прямые конкуренты (по близости)", direct, 20)).append('\n');
         } else {
             sb.append("- прямых конкурентов нет.\n");
         }
 
         if (!indirect.isEmpty()) {
-            sb.append(formatCompetitorLine("косвенные конкуренты", indirect, 15)).append('\n');
-            if (direct.isEmpty())
-                sb.append("- по шкале: ").append(scaleRowForIndirect(indirect.size())).append('\n');
-            else
-                sb.append("- косвенные на балл не повлияли (учитываются только при отсутствии прямых).\n");
+            sb.append(formatCompetitorLine("косвенные конкуренты (по близости)", indirect, 15)).append('\n');
         }
 
-        sb.append("- итог по конкурентам: ").append(score).append("/30, потеряно ").append(penalty).append(".\n");
+        sb.append("- логика балла: distance-weighted exp-decay. Близкий конкурент весит ~1, ")
+          .append("дальний в радиусе 1 км — ~0.05. Score = 40 · exp(-1.0·Σw_прямых − 0.3·Σw_косвенных). ")
+          .append("Само количество конкурентов меньше важно, чем их близость к адресу.\n");
+        sb.append("- итог по конкурентам: ").append(score).append("/40, потеряно ").append(penalty).append(".\n");
         return sb.toString();
     }
 
@@ -282,19 +327,6 @@ public class OpenRouterAiService {
     private boolean isUnnamedPlaceholder(String name) {
         if (name == null || name.isEmpty()) return true;
         return name.matches("^(shop|amenity|office|healthcare|leisure|craft|tourism)=.+");
-    }
-
-    private String scaleRowForDirect(int n) {
-        if (n >= 5) return "5 и более прямых даёт 0/30.";
-        if (n >= 3) return n + " прямых даёт 3/30.";
-        if (n == 2) return "2 прямых даёт 6/30.";
-        return "1 прямой даёт 12/30.";
-    }
-
-    private String scaleRowForIndirect(int n) {
-        if (n >= 6) return "6 и более косвенных при отсутствии прямых даёт 12/30.";
-        if (n >= 3) return n + " косвенных при отсутствии прямых даёт 18/30.";
-        return n + " косвенных при отсутствии прямых даёт 24/30.";
     }
 
     private String joinNames(List<String> names, int cap) {

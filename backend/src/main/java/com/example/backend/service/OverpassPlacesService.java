@@ -124,6 +124,46 @@ public class OverpassPlacesService {
         return all;
     }
 
+    /**
+     * Отдельный запрос за остановками общественного транспорта в радиусе.
+     * Кэш независим от {@link #searchNearby} — поведение запросов разное
+     * (метро/жд имеют другую плотность, чем магазины), и арендатор может
+     * рассматривать тот же адрес с разными бизнес-радиусами.
+     */
+    @Cacheable(
+            value = "overpassTransport",
+            key = "T(Math).round(#lat * 1000) + '_' + T(Math).round(#lon * 1000) + '_' + " +
+                  "T(Math).floorDiv(#radiusMeters, 250)",
+            unless = "#result == null || #result.isEmpty()"
+    )
+    public List<TransportStop> searchTransportNearby(double lat, double lon, int radiusMeters) {
+        String query = buildTransportQuery(lat, lon, radiusMeters);
+        log.info("[OVERPASS-TRANSPORT] POST {} | query: {}", overpassUrl, query);
+
+        String formBody = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
+        String body;
+        try {
+            body = overpassRestClient.post()
+                    .uri(overpassUrl)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .header("User-Agent", "street-retail-aggregator/1.0 (scoring)")
+                    .header("Accept", "application/json")
+                    .body(formBody)
+                    .retrieve()
+                    .body(String.class);
+        } catch (Exception e) {
+            log.warn("[OVERPASS-TRANSPORT] Сбой запроса (lat={}, lon={}, r={}м): {}",
+                    lat, lon, radiusMeters, e.getMessage());
+            return List.of();
+        }
+        if (body == null || body.isBlank()) return List.of();
+
+        List<TransportStop> stops = parseTransportElements(body);
+        log.info("[OVERPASS-TRANSPORT] (lat={}, lon={}, r={}м): получено {} остановок",
+                lat, lon, radiusMeters, stops.size());
+        return stops;
+    }
+
     // =========================================================================
 
     /**
@@ -171,6 +211,97 @@ public class OverpassPlacesService {
 
     private String joinAlt(List<String> values) {
         return String.join("|", values);
+    }
+
+    /**
+     * Запрос за транспортными узлами вокруг точки. Берём:
+     *   railway=station          (метро + жд + любые станции)
+     *   railway=subway_entrance  (входы в метро — ценнее центра станции
+     *                             для пешеходного трафика)
+     *   railway=tram_stop        (трамвайные остановки)
+     *   highway=bus_stop         (автобусные остановки — основной OSM-тег)
+     *   public_transport=station (новая схема для крупных пересадочных)
+     */
+    private String buildTransportQuery(double lat, double lon, int radiusMeters) {
+        String around = "around:" + radiusMeters + "," + lat + "," + lon;
+        StringBuilder q = new StringBuilder("[out:json][timeout:25];(");
+        q.append("nwr[railway=station](").append(around).append(");");
+        q.append("nwr[railway=subway_entrance](").append(around).append(");");
+        q.append("nwr[railway=tram_stop](").append(around).append(");");
+        q.append("nwr[highway=bus_stop](").append(around).append(");");
+        q.append("nwr[public_transport=station](").append(around).append(");");
+        q.append(");out tags center 500;");
+        return q.toString();
+    }
+
+    private List<TransportStop> parseTransportElements(String body) {
+        List<TransportStop> out = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode elements = root.path("elements");
+            if (!elements.isArray()) return out;
+
+            Map<String, TransportStop> byId = new LinkedHashMap<>();
+            for (JsonNode el : elements) {
+                String type = el.path("type").asText("");
+                long id = el.path("id").asLong(0);
+                JsonNode tags = el.path("tags");
+                if (!tags.isObject()) continue;
+
+                TransportStop.TransportType stopType = classifyTransport(tags);
+                if (stopType == null) continue;
+
+                String name = bestName(tags);
+                if (name == null || name.isBlank()) {
+                    name = defaultTransportName(stopType);
+                }
+                double[] coords = parseCoords(el);
+                String key = type + ":" + id;
+                byId.putIfAbsent(key, new TransportStop(name, stopType, coords[0], coords[1]));
+            }
+            out.addAll(byId.values());
+        } catch (Exception e) {
+            log.warn("[OVERPASS-TRANSPORT] Ошибка парсинга: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    /**
+     * Решающие правила по приоритету OSM-тегов. Метро определяется как
+     * railway=subway_entrance ИЛИ (railway=station + (station=subway || subway=yes)).
+     */
+    private TransportStop.TransportType classifyTransport(JsonNode tags) {
+        String railway = textOrEmpty(tags, "railway");
+        String station = textOrEmpty(tags, "station");
+        String subway  = textOrEmpty(tags, "subway");
+        String highway = textOrEmpty(tags, "highway");
+        String pt      = textOrEmpty(tags, "public_transport");
+
+        if ("subway_entrance".equals(railway)) return TransportStop.TransportType.METRO;
+        if ("station".equals(railway) && ("subway".equals(station) || "yes".equals(subway)))
+            return TransportStop.TransportType.METRO;
+        if ("station".equals(railway)) return TransportStop.TransportType.RAIL;
+        if ("station".equals(pt) && ("subway".equals(station) || "yes".equals(subway)))
+            return TransportStop.TransportType.METRO;
+        if ("station".equals(pt)) return TransportStop.TransportType.RAIL;
+        if ("tram_stop".equals(railway)) return TransportStop.TransportType.TRAM;
+        if ("bus_stop".equals(highway)) return TransportStop.TransportType.BUS;
+        return null;
+    }
+
+    private String textOrEmpty(JsonNode tags, String key) {
+        JsonNode v = tags.get(key);
+        if (v == null || v.isMissingNode()) return "";
+        return v.asText("").trim().toLowerCase();
+    }
+
+    private String defaultTransportName(TransportStop.TransportType t) {
+        return switch (t) {
+            case METRO -> "метро";
+            case RAIL  -> "ж/д станция";
+            case TRAM  -> "трамвайная остановка";
+            case BUS   -> "автобусная остановка";
+        };
     }
 
     private List<NearbyBusiness> parseElements(String body) {
