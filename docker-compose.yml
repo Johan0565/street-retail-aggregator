@@ -38,6 +38,9 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       TWOGIS_API_KEY: ${TWOGIS_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      APP_UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
