@@ -44,6 +44,22 @@ public class PropertyScoringService {
     private static final int MAX_COMPETITOR_SCORE  = 30;
     private static final int MAX_SYNERGY_SCORE     = 20;
 
+    // --- Параметры алгоритма distance-aware скоринга соседей ---
+    // Характерная дистанция decay'a берётся как radius / SIGMA_DIVISOR. При
+    // радиусе 1000м σ≈333м, и конкурент за 1км даёт вес exp(-3)≈0.05. То есть
+    // далёкие POI почти не влияют, ближние влияют сильно — устраняем главный
+    // дефект прежней step-функции «5+ direct = 0» в плотных районах вроде Мск.
+    private static final double DISTANCE_SIGMA_DIVISOR = 3.0;
+    // Жёсткость экспоненциального спада итогового балла конкурентов.
+    // Калибровка: один близкий direct (вес≈0.86) → score≈12.8 (≈ прежние 12).
+    private static final double COMPETITOR_DECAY_K_DIRECT   = 1.0;
+    // Косвенный конкурент в ~3× мягче прямого.
+    private static final double COMPETITOR_DECAY_K_INDIRECT = 0.3;
+    // Если Overpass не отдал координаты конкретного POI — используем «средний»
+    // вес, чтобы он всё-таки участвовал в формуле, но не доминировал.
+    private static final double FALLBACK_WEIGHT_MISSING_COORDS = 0.2;
+    private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
     // =========================================================================
     //  ПУБЛИЧНЫЕ МЕТОДЫ
     // =========================================================================
@@ -154,19 +170,22 @@ public class PropertyScoringService {
     // =========================================================================
     //  КОМПОНЕНТ 3 + 4: Анализ окрестности через Overpass API
     //
-    //  Конкуренты (0–30 баллов):
-    //    Прямые  | Косвенные | Балл
-    //    --------|-----------|-----
-    //    0       | 0         | 30
-    //    0       | 1–2       | 24
-    //    0       | 3–5       | 18
-    //    0       | 6+        | 12
-    //    1       | —         | 12
-    //    2       | —         |  6
-    //    3–4     | —         |  3
-    //    5+      | —         |  0
+    //  Конкуренты (0–30 баллов) — distance-aware smooth decay:
+    //    weight_i = exp(-distance_i / σ),  σ = radius / 3
+    //    weightedDirect   = Σ weight_i по прямым конкурентам
+    //    weightedIndirect = Σ weight_i по косвенным
+    //    competitorScore  = 30 * exp(-1.0 * weightedDirect - 0.3 * weightedIndirect)
     //
-    //  Синергия (0–20 баллов) — round(20 * найденных_категорий / желаемых_категорий)
+    //  Почему так, а не step-функция: в Москве в радиусе 1км может быть 50+
+    //  организаций той же категории, и прежняя «5+ direct = 0» обнуляла все
+    //  адреса в плотных районах. Теперь 5 далёких конкурентов (по 900м) дают
+    //  ~23/30, 5 близких (по 50м) — ~1/30, а абсолютные числа не клипают
+    //  значение в 0.
+    //
+    //  Синергия (0–20 баллов) — distance-aware:
+    //    Для каждой желаемой категории берём максимум веса по найденным POI,
+    //    усредняем по всем желаемым категориям, домножаем на 20.
+    //    Сосед через дорогу теперь весит больше, чем через 1 км.
     // =========================================================================
 
     private record NeighborhoodResult(
@@ -225,12 +244,19 @@ public class PropertyScoringService {
                                           synergyEmpty, List.of());
         }
 
-        // ------- Классификация: direct / indirect / synergy -------
-        long direct   = 0;
-        long indirect = 0;
-        List<String> directNames   = new ArrayList<>();
-        List<String> indirectNames = new ArrayList<>();
-        Map<Long, List<String>> synergyByCategory = new LinkedHashMap<>();
+        // ------- Классификация: direct / indirect / synergy с distance-aware весами -------
+        final double sigma = Math.max(radius / DISTANCE_SIGMA_DIVISOR, 50.0);
+
+        double weightedDirect   = 0.0;
+        double weightedIndirect = 0.0;
+        long directCount   = 0;
+        long indirectCount = 0;
+        // (name, weight) — пригодится отсортировать по близости для UI/AI.
+        List<NamedWeight> directRanked   = new ArrayList<>();
+        List<NamedWeight> indirectRanked = new ArrayList<>();
+        // Для синергии: max(weight) по каждой желаемой категории.
+        Map<Long, Double> synergyMaxWeight = new LinkedHashMap<>();
+        Map<Long, String> synergyBestName  = new LinkedHashMap<>();
 
         for (NearbyBusiness business : nearbyBusinesses) {
             boolean isDirect   = false;
@@ -278,18 +304,40 @@ public class PropertyScoringService {
                 }
             }
 
-            if (isDirect)        { direct++;   directNames.add(business.name()); }
-            else if (isIndirect) { indirect++; indirectNames.add(business.name()); }
+            double weight = distanceWeight(lat, lon, business, sigma);
+
+            if (isDirect) {
+                directCount++;
+                weightedDirect += weight;
+                directRanked.add(new NamedWeight(business.name(), weight));
+            } else if (isIndirect) {
+                indirectCount++;
+                weightedIndirect += weight;
+                indirectRanked.add(new NamedWeight(business.name(), weight));
+            }
 
             for (Long catId : synergyMatchesForBusiness) {
-                synergyByCategory.computeIfAbsent(catId, k -> new ArrayList<>()).add(business.name());
+                Double prev = synergyMaxWeight.get(catId);
+                if (prev == null || weight > prev) {
+                    synergyMaxWeight.put(catId, weight);
+                    synergyBestName.put(catId, business.name());
+                }
             }
         }
 
-        log.info("[COMP-SCORE] property={}: прямых={} {}, косвенных={} {}, всего бизнесов в радиусе={}",
-                property.getId(), direct, directNames, indirect, indirectNames, nearbyBusinesses.size());
+        // Сортировка имён по близости: ближайший конкурент первым.
+        directRanked.sort(Comparator.comparingDouble((NamedWeight nw) -> nw.weight).reversed());
+        indirectRanked.sort(Comparator.comparingDouble((NamedWeight nw) -> nw.weight).reversed());
+        List<String> directNames   = directRanked.stream().map(NamedWeight::name).collect(Collectors.toList());
+        List<String> indirectNames = indirectRanked.stream().map(NamedWeight::name).collect(Collectors.toList());
 
-        if (direct == 0 && indirect == 0 && !nearbyBusinesses.isEmpty()) {
+        log.info("[COMP-SCORE] property={}: прямых={} (вес={}), косвенных={} (вес={}), всего бизнесов в радиусе={}, σ={}м",
+                property.getId(),
+                directCount, String.format("%.2f", weightedDirect),
+                indirectCount, String.format("%.2f", weightedIndirect),
+                nearbyBusinesses.size(), (int) sigma);
+
+        if (directCount == 0 && indirectCount == 0 && !nearbyBusinesses.isEmpty()) {
             int sample = Math.min(5, nearbyBusinesses.size());
             log.warn("[COMP-NO-MATCH] property={}: ни один из {} бизнесов не классифицирован. Первые {} для проверки тегов:",
                     property.getId(), nearbyBusinesses.size(), sample);
@@ -299,35 +347,64 @@ public class PropertyScoringService {
             }
         }
 
-        int competitorScore;
-        if      (direct >= 5)   competitorScore = 0;
-        else if (direct >= 3)   competitorScore = 3;
-        else if (direct == 2)   competitorScore = 6;
-        else if (direct == 1)   competitorScore = 12;
-        else if (indirect >= 6) competitorScore = 12;
-        else if (indirect >= 3) competitorScore = 18;
-        else if (indirect >= 1) competitorScore = 24;
-        else                    competitorScore = MAX_COMPETITOR_SCORE;
+        double exponent = COMPETITOR_DECAY_K_DIRECT * weightedDirect
+                        + COMPETITOR_DECAY_K_INDIRECT * weightedIndirect;
+        int competitorScore = (int) Math.round(MAX_COMPETITOR_SCORE * Math.exp(-exponent));
+        competitorScore = Math.max(0, Math.min(MAX_COMPETITOR_SCORE, competitorScore));
 
         int synergyScore;
         List<String> synergyNames = new ArrayList<>();
         if (desiredNeighborIds.isEmpty()) {
             synergyScore = MAX_SYNERGY_SCORE;
         } else {
-            int found = synergyByCategory.size();
-            synergyScore = (int) Math.round(MAX_SYNERGY_SCORE * (double) found / desiredNeighborIds.size());
-            for (List<String> names : synergyByCategory.values()) {
-                synergyNames.addAll(names);
+            double sumMaxWeights = 0.0;
+            for (Long catId : desiredNeighborIds) {
+                sumMaxWeights += synergyMaxWeight.getOrDefault(catId, 0.0);
             }
+            double normalized = sumMaxWeights / desiredNeighborIds.size();
+            synergyScore = (int) Math.round(MAX_SYNERGY_SCORE * normalized);
+            synergyScore = Math.max(0, Math.min(MAX_SYNERGY_SCORE, synergyScore));
+            // Имена сортируем по убыванию веса — самые близкие соседи первыми.
+            synergyMaxWeight.entrySet().stream()
+                    .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                    .forEach(e -> synergyNames.add(synergyBestName.get(e.getKey())));
         }
 
         log.info("[SYNERGY] property={}: желаемых соседей={}, найдено категорий={}, соседи={}, балл={}/{}",
                 property.getId(), desiredNeighborIds.size(),
-                synergyByCategory.size(), synergyNames, synergyScore, MAX_SYNERGY_SCORE);
+                synergyMaxWeight.size(), synergyNames, synergyScore, MAX_SYNERGY_SCORE);
 
         return new NeighborhoodResult(competitorScore, directNames, indirectNames,
                                       synergyScore, synergyNames);
     }
+
+    /**
+     * Возвращает вес соседа: {@code exp(-distance / σ)} в [0,1]. Если у POI
+     * нет координат (Overpass иногда не отдаёт center для way/relation),
+     * используем мягкий fallback, чтобы такой POI всё же учитывался.
+     */
+    private double distanceWeight(double propertyLat, double propertyLon,
+                                  NearbyBusiness business, double sigma) {
+        double bLat = business.lat();
+        double bLon = business.lon();
+        if (bLat == 0.0 && bLon == 0.0) {
+            return FALLBACK_WEIGHT_MISSING_COORDS;
+        }
+        double dist = haversineMeters(propertyLat, propertyLon, bLat, bLon);
+        return Math.exp(-dist / sigma);
+    }
+
+    private double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                 * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return EARTH_RADIUS_METERS * c;
+    }
+
+    private record NamedWeight(String name, double weight) {}
 
     // =========================================================================
     //  HELPERS: индекс OSM-тег → категории

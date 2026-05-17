@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(flutter analyze *)",
-      "Bash(dir c:\\\\Games\\\\street-retail-aggregator)"
+      "Bash(dir c:\\\\Games\\\\street-retail-aggregator)",
+      "Bash(where java *)",
+      "Bash(java -version)",
+      "Read(//c/Users/User/.jdks/**)",
+      "Read(//c/Users/User/.gradle/jdks/**)"
     ]
   }
 }
