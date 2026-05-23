@@ -10,6 +10,15 @@ import '../../../services/image_helper.dart';
 import '../../../services/infrastructure_service.dart';
 import '../../../services/property_service.dart';
 
+/// Результат, который PropertyDetailsScreen возвращает MapScreen-у, когда
+/// пользователь тапнул конкретного соседа в шторке «Конкуренты»/«Синергия».
+/// MapScreen анимирует камеру к этим координатам.
+class PropertyDetailsFocusResult {
+  final double latitude;
+  final double longitude;
+  const PropertyDetailsFocusResult({required this.latitude, required this.longitude});
+}
+
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
   final bool isLandlordMode;
@@ -17,6 +26,10 @@ class PropertyDetailsScreen extends StatefulWidget {
   /// ID проекта поиска, под который строится скоринг и AI-отчёт. Если не
   /// задан — бэкенд использует первый активный проект арендатора.
   final int? profileId;
+  /// Список желаемых соседей-категорий, выбранных пользователем при создании
+  /// проекта поиска. Показываются в шторке «Синергия», даже если рядом
+  /// никого из них не нашлось.
+  final List<String> desiredNeighborNames;
 
   const PropertyDetailsScreen({
     super.key,
@@ -24,6 +37,7 @@ class PropertyDetailsScreen extends StatefulWidget {
     this.isLandlordMode = false,
     this.scoredProperty,
     this.profileId,
+    this.desiredNeighborNames = const [],
   });
 
   @override
@@ -70,6 +84,16 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       _loadedScore = score;
       _isLoadingScore = false;
     });
+  }
+
+  /// Закрывает модальную шторку и сам экран деталей, возвращая координаты
+  /// выбранного POI наверх — MapScreen анимирует к ним камеру.
+  void _focusLocationAndClose(double lat, double lon) {
+    final nav = Navigator.of(context);
+    // 1) Закрыть шторку (она на верхушке навигатора).
+    nav.pop();
+    // 2) Закрыть сам экран деталей, передав координаты для фокуса карты.
+    nav.pop(PropertyDetailsFocusResult(latitude: lat, longitude: lon));
   }
 
   Future<void> _checkIfFavorite() async {
@@ -356,7 +380,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     _buildScoringCard((widget.scoredProperty ?? _loadedScore)!),
                     const SizedBox(height: 10),
                     _buildCompetitorsButton((widget.scoredProperty ?? _loadedScore)!),
-                    if ((widget.scoredProperty ?? _loadedScore)!.synergyNeighborNames.isNotEmpty) ...[
+                    if (widget.desiredNeighborNames.isNotEmpty ||
+                        (widget.scoredProperty ?? _loadedScore)!.synergyNeighborNames.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       _buildSynergyButton((widget.scoredProperty ?? _loadedScore)!),
                     ],
@@ -635,6 +660,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   Widget _buildCompetitorsButton(ScoredProperty scored) {
     final direct = scored.directCompetitorNames.length;
     final indirect = scored.indirectCompetitorNames.length;
+    final directRefs = scored.breakdown?.competitor?.directRefs ?? const <CompetitorRef>[];
+    final indirectRefs = scored.breakdown?.competitor?.indirectRefs ?? const <CompetitorRef>[];
 
     return GestureDetector(
       onTap: () => showModalBottomSheet(
@@ -644,6 +671,9 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         builder: (_) => _CompetitorsSheet(
           directNames: scored.directCompetitorNames,
           indirectNames: scored.indirectCompetitorNames,
+          directRefs: directRefs,
+          indirectRefs: indirectRefs,
+          onLocationTap: _focusLocationAndClose,
         ),
       ),
       child: Container(
@@ -695,15 +725,24 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   }
 
   Widget _buildSynergyButton(ScoredProperty scored) {
-    final count = scored.synergyNeighborNames.length;
+    final selectedCount = widget.desiredNeighborNames.length;
+    final foundCount = scored.synergyNeighborNames.length;
     const synergyColor = Color(0xFF22C55E);
+    final badgeText = selectedCount > 0 ? '$foundCount / $selectedCount' : '$foundCount';
+
+    final foundRefs = scored.breakdown?.synergy?.refs ?? const <SynergyRef>[];
 
     return GestureDetector(
       onTap: () => showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => _SynergySheet(names: scored.synergyNeighborNames),
+        builder: (_) => _SynergySheet(
+          selectedCategories: widget.desiredNeighborNames,
+          foundNames: scored.synergyNeighborNames,
+          foundRefs: foundRefs,
+          onLocationTap: _focusLocationAndClose,
+        ),
       ),
       child: Container(
         width: double.infinity,
@@ -718,7 +757,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             const Icon(Icons.handshake_rounded, color: synergyColor, size: 18),
             const SizedBox(width: 10),
             const Text(
-              'Синергия рядом',
+              'Синергия',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
             ),
             const SizedBox(width: 10),
@@ -729,7 +768,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                '$count',
+                badgeText,
                 style: const TextStyle(color: synergyColor, fontWeight: FontWeight.bold, fontSize: 11),
               ),
             ),
@@ -842,10 +881,21 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 class _CompetitorsSheet extends StatelessWidget {
   final List<String> directNames;
   final List<String> indirectNames;
+  /// Дополнительная инфа с координатами. Если индекс в refs совпадает с
+  /// индексом в *Names (бэкенд отдаёт их в одном порядке), элемент списка
+  /// становится тапабельным и переводит карту к этому соседу.
+  final List<CompetitorRef> directRefs;
+  final List<CompetitorRef> indirectRefs;
+  /// Колбэк PropertyDetailsScreen-а: закрывает шторку и экран деталей,
+  /// возвращая выбранные координаты на карту.
+  final void Function(double lat, double lon) onLocationTap;
 
   const _CompetitorsSheet({
     required this.directNames,
     required this.indirectNames,
+    required this.directRefs,
+    required this.indirectRefs,
+    required this.onLocationTap,
   });
 
   @override
@@ -898,6 +948,7 @@ class _CompetitorsSheet extends StatelessWidget {
                       count: directNames.length,
                       color: const Color(0xFFEF4444),
                       names: directNames,
+                      refs: directRefs,
                       emptyText: 'Прямых конкурентов рядом не найдено',
                     ),
                     const SizedBox(height: 20),
@@ -906,6 +957,7 @@ class _CompetitorsSheet extends StatelessWidget {
                       count: indirectNames.length,
                       color: const Color(0xFFF59E0B),
                       names: indirectNames,
+                      refs: indirectRefs,
                       emptyText: 'Косвенных конкурентов рядом не найдено',
                     ),
                   ],
@@ -923,6 +975,7 @@ class _CompetitorsSheet extends StatelessWidget {
     required int count,
     required Color color,
     required List<String> names,
+    required List<CompetitorRef> refs,
     required String emptyText,
   }) {
     return Column(
@@ -960,26 +1013,52 @@ class _CompetitorsSheet extends StatelessWidget {
         else
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: names.map((name) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.location_on_outlined, size: 16, color: color),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        name.isNotEmpty ? name : 'Без названия',
-                        style: const TextStyle(fontSize: 14, color: Colors.black87),
-                      ),
-                    ),
-                  ],
-                ),
+            children: List.generate(names.length, (i) {
+              final name = names[i];
+              // Бэкенд отдаёт names и refs в одном порядке, но подстрахуемся
+              // по индексу. Если у ref нет координат — оставляем строку
+              // невыпклой и не тапабельной.
+              final ref = i < refs.length ? refs[i] : null;
+              final lat = ref?.latitude;
+              final lon = ref?.longitude;
+              final tappable = lat != null && lon != null;
+              return _competitorRow(
+                name: name,
+                color: color,
+                onTap: tappable ? () => onLocationTap(lat, lon) : null,
               );
-            }).toList(),
+            }),
           ),
       ],
+    );
+  }
+
+  Widget _competitorRow({required String name, required Color color, VoidCallback? onTap}) {
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.location_on_outlined, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              name.isNotEmpty ? name : 'Без названия',
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+            ),
+          ),
+          if (onTap != null) Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[400]),
+        ],
+      ),
+    );
+    if (onTap == null) return row;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: row,
+      ),
     );
   }
 }
@@ -989,9 +1068,21 @@ class _CompetitorsSheet extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _SynergySheet extends StatelessWidget {
-  final List<String> names;
+  /// Категории-соседи, выбранные при создании проекта поиска.
+  final List<String> selectedCategories;
+  /// Названия зданий/бизнесов из этих категорий, реально найденных в радиусе.
+  final List<String> foundNames;
+  /// Найденные соседи с координатами — для перехода к ним по тапу.
+  final List<SynergyRef> foundRefs;
+  /// Закрывает шторку + экран и просит карту сфокусироваться на координатах.
+  final void Function(double lat, double lon) onLocationTap;
 
-  const _SynergySheet({required this.names});
+  const _SynergySheet({
+    required this.selectedCategories,
+    required this.foundNames,
+    required this.foundRefs,
+    required this.onLocationTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1027,7 +1118,7 @@ class _SynergySheet extends StatelessWidget {
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Синергия — желаемые соседи рядом',
+                      'Синергия',
                       style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -1038,7 +1129,7 @@ class _SynergySheet extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${names.length}',
+                      '${foundNames.length} / ${selectedCategories.length}',
                       style: const TextStyle(color: synergyColor, fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                   ),
@@ -1049,37 +1140,117 @@ class _SynergySheet extends StatelessWidget {
             Flexible(
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(20, 0, 20, bottomPadding + 28),
-                child: names.isEmpty
-                    ? const Text(
-                        'Желаемых соседей рядом не найдено',
-                        style: TextStyle(color: Colors.grey, fontSize: 13),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: names.map((name) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.location_on_outlined, size: 16, color: synergyColor),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    name.isNotEmpty ? name : 'Без названия',
-                                    style: const TextStyle(fontSize: 14, color: Colors.black87),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSection(
+                      title: 'Выбранные категории при создании проекта',
+                      count: selectedCategories.length,
+                      items: selectedCategories,
+                      emptyText: 'Категории-соседи не выбраны',
+                      icon: Icons.check_circle_outline,
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSection(
+                      title: 'Найдено рядом',
+                      count: foundNames.length,
+                      items: foundNames,
+                      refs: foundRefs,
+                      emptyText: 'Желаемых соседей рядом не найдено',
+                      icon: Icons.location_on_outlined,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required int count,
+    required List<String> items,
+    required String emptyText,
+    required IconData icon,
+    List<SynergyRef> refs = const [],
+  }) {
+    const synergyColor = Color(0xFF22C55E);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(color: synergyColor, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: synergyColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(color: synergyColor, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (items.isEmpty)
+          Text(emptyText, style: const TextStyle(color: Colors.grey, fontSize: 13))
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(items.length, (i) {
+              final name = items[i];
+              final ref = i < refs.length ? refs[i] : null;
+              final lat = ref?.latitude;
+              final lon = ref?.longitude;
+              final tappable = lat != null && lon != null;
+              final row = Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, size: 16, color: synergyColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name.isNotEmpty ? name : 'Без названия',
+                        style: const TextStyle(fontSize: 14, color: Colors.black87),
+                      ),
+                    ),
+                    if (tappable)
+                      Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[400]),
+                  ],
+                ),
+              );
+              if (!tappable) return row;
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => onLocationTap(lat, lon),
+                  child: row,
+                ),
+              );
+            }),
+          ),
+      ],
     );
   }
 }

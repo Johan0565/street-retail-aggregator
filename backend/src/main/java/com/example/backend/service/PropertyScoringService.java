@@ -553,8 +553,15 @@ public class PropertyScoringService {
                         isIndirect = true;
                     }
                 }
+                // Синергия: матчим как по точному id, так и по родителю —
+                // иначе выбор «корневой» категории желаемого соседа (например,
+                // «Кафе и рестораны») не подхватывал бы бизнесы в её подкатегориях
+                // («Кофейня», «Ресторан»), хотя для конкурентов та же проверка
+                // через matchedParentId уже работает.
                 if (desiredNeighborIds.contains(catId)) {
                     synergyMatchesForBusiness.add(catId);
+                } else if (matchedParentId != null && desiredNeighborIds.contains(matchedParentId)) {
+                    synergyMatchesForBusiness.add(matchedParentId);
                 }
             }
 
@@ -563,14 +570,18 @@ public class PropertyScoringService {
                     : haversineMeters(lat, lon, business.lat(), business.lon());
             double weight = distanceWeight(lat, lon, business, sigma);
 
+            boolean hasCoords = !(business.lat() == 0.0 && business.lon() == 0.0);
+            Double bLat = hasCoords ? business.lat() : null;
+            Double bLon = hasCoords ? business.lon() : null;
+
             if (isDirect) {
                 directCount++;
                 weightedDirect += weight;
-                directRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight));
+                directRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight, bLat, bLon));
             } else if (isIndirect) {
                 indirectCount++;
                 weightedIndirect += weight;
-                indirectRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight));
+                indirectRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight, bLat, bLon));
             }
 
             for (Long catId : synergyMatchesForBusiness) {
@@ -580,6 +591,8 @@ public class PropertyScoringService {
                             .name(business.name())
                             .distanceMeters(distanceMeters < 0 ? -1 : Math.round(distanceMeters))
                             .weight(round2(weight))
+                            .latitude(bLat)
+                            .longitude(bLon)
                             .build());
                 }
             }
@@ -655,11 +668,14 @@ public class PropertyScoringService {
                                       competitorPart, synergyPart);
     }
 
-    private ScoreBreakdown.CompetitorRef buildCompetitorRef(String name, double distanceMeters, double weight) {
+    private ScoreBreakdown.CompetitorRef buildCompetitorRef(String name, double distanceMeters, double weight,
+                                                            Double latitude, Double longitude) {
         return ScoreBreakdown.CompetitorRef.builder()
                 .name(name)
                 .distanceMeters(distanceMeters < 0 ? -1 : Math.round(distanceMeters))
                 .weight(round2(weight))
+                .latitude(latitude)
+                .longitude(longitude)
                 .build();
     }
 

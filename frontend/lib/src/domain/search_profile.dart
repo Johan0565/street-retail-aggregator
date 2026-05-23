@@ -308,11 +308,21 @@ class CompetitorRef {
   final String name;
   final double distanceMeters;
   final double weight;
-  const CompetitorRef({required this.name, required this.distanceMeters, required this.weight});
+  final double? latitude;
+  final double? longitude;
+  const CompetitorRef({
+    required this.name,
+    required this.distanceMeters,
+    required this.weight,
+    this.latitude,
+    this.longitude,
+  });
   factory CompetitorRef.fromJson(Map<String, dynamic> j) => CompetitorRef(
         name: j['name']?.toString() ?? '',
         distanceMeters: (j['distanceMeters'] as num?)?.toDouble() ?? -1,
         weight: (j['weight'] as num?)?.toDouble() ?? 0,
+        latitude: (j['latitude'] as num?)?.toDouble(),
+        longitude: (j['longitude'] as num?)?.toDouble(),
       );
 }
 
@@ -336,11 +346,21 @@ class SynergyRef {
   final String name;
   final double distanceMeters;
   final double weight;
-  const SynergyRef({required this.name, required this.distanceMeters, required this.weight});
+  final double? latitude;
+  final double? longitude;
+  const SynergyRef({
+    required this.name,
+    required this.distanceMeters,
+    required this.weight,
+    this.latitude,
+    this.longitude,
+  });
   factory SynergyRef.fromJson(Map<String, dynamic> j) => SynergyRef(
         name: j['name']?.toString() ?? '',
         distanceMeters: (j['distanceMeters'] as num?)?.toDouble() ?? -1,
         weight: (j['weight'] as num?)?.toDouble() ?? 0,
+        latitude: (j['latitude'] as num?)?.toDouble(),
+        longitude: (j['longitude'] as num?)?.toDouble(),
       );
 }
 

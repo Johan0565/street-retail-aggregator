@@ -7058,19 +7058,24 @@ class MapScreenState extends State<MapScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.pop(context);
-                    Navigator.push(
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => PropertyDetailsScreen(
                           property: property,
                           scoredProperty: scored,
                           profileId: _activeProfile?.id,
+                          desiredNeighborNames:
+                              _activeProfile?.desiredNeighborNames ?? const [],
                           isLandlordMode: widget.isLandlordMode,
                         ),
                       ),
                     );
+                    if (result is PropertyDetailsFocusResult) {
+                      _focusCameraOn(result.latitude, result.longitude);
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
@@ -7085,6 +7090,19 @@ class MapScreenState extends State<MapScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Плавно перемещает камеру к выбранному POI и доводит зум до улицы. Так
+  /// MapScreen реагирует, когда пользователь тапнул конкретного конкурента
+  /// или соседа в шторке PropertyDetailsScreen-а.
+  void _focusCameraOn(double lat, double lon) {
+    if (!_mapControllerReady) return;
+    mapController.moveCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: Point(latitude: lat, longitude: lon), zoom: 17),
+      ),
+      animation: const MapAnimation(type: MapAnimationType.smooth, duration: 0.6),
     );
   }
 
@@ -7125,9 +7143,6 @@ class MapScreenState extends State<MapScreen> {
     double? maxPrice = _activeFilter.maxPrice;
     double? minArea  = _activeFilter.minArea;
     double? maxArea  = _activeFilter.maxArea;
-    String metro     = _activeFilter.metroStation ?? '';
-    Set<String> selectedTypes = Set.from(_activeFilter.propertyTypes);
-    bool onlyFree    = _activeFilter.onlyFree;
     Set<ScoreBucket> selectedBuckets = Set.from(_activeFilter.scoreBuckets);
     final bool hasScoring = _activeProfile != null && _scoreCache.isNotEmpty;
 
@@ -7135,16 +7150,6 @@ class MapScreenState extends State<MapScreen> {
     final maxPriceCtrl = TextEditingController(text: maxPrice?.toInt().toString() ?? '');
     final minAreaCtrl  = TextEditingController(text: minArea?.toInt().toString() ?? '');
     final maxAreaCtrl  = TextEditingController(text: maxArea?.toInt().toString() ?? '');
-    final metroCtrl    = TextEditingController(text: metro);
-
-    const typeLabels = {
-      'OFFICE':     'Офис',
-      'RETAIL':     'Ритейл',
-      'WAREHOUSE':  'Склад',
-      'PRODUCTION': 'Производство',
-      'PSN':        'ПСН',
-      'CATERING':   'Общепит',
-    };
 
     showModalBottomSheet(
       context: context,
@@ -7174,13 +7179,9 @@ class MapScreenState extends State<MapScreen> {
                     TextButton(
                       onPressed: () => setSheet(() {
                         minPrice = maxPrice = minArea = maxArea = null;
-                        metro = '';
-                        selectedTypes = {};
-                        onlyFree = false;
                         selectedBuckets = {};
                         minPriceCtrl.clear(); maxPriceCtrl.clear();
                         minAreaCtrl.clear();  maxAreaCtrl.clear();
-                        metroCtrl.clear();
                       }),
                       child: const Text('Сбросить', style: TextStyle(color: Colors.grey)),
                     ),
@@ -7213,44 +7214,6 @@ class MapScreenState extends State<MapScreen> {
                       onChanged: (v) => maxArea = double.tryParse(v))),
                 ]),
                 const SizedBox(height: 16),
-
-                // ── Метро ──────────────────────────────────────────────
-                const Text('Метро',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                const SizedBox(height: 8),
-                _filterTextField(metroCtrl, 'Название станции',
-                    onChanged: (v) => metro = v),
-                const SizedBox(height: 16),
-
-                // ── Тип помещения ──────────────────────────────────────
-                const Text('Тип помещения',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: typeLabels.entries.map((e) {
-                    final selected = selectedTypes.contains(e.key);
-                    return FilterChip(
-                      label: Text(e.value,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: selected ? _primaryOrange : Colors.black87,
-                            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                          )),
-                      selected: selected,
-                      onSelected: (v) => setSheet(() {
-                        v ? selectedTypes.add(e.key) : selectedTypes.remove(e.key);
-                      }),
-                      selectedColor: _primaryOrange.withValues(alpha: 0.12),
-                      checkmarkColor: _primaryOrange,
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: selected ? _primaryOrange : Colors.grey.shade300),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
 
                 // ── Оценка соответствия ────────────────────────────────
                 if (hasScoring) ...[
@@ -7305,24 +7268,6 @@ class MapScreenState extends State<MapScreen> {
                   const SizedBox(height: 16),
                 ],
 
-                // ── Только свободные ───────────────────────────────────
-                Container(
-                  decoration: BoxDecoration(
-                      color: Colors.grey[50], borderRadius: BorderRadius.circular(12)),
-                  child: SwitchListTile(
-                    title: const Text('Только свободные',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                    subtitle: const Text('Помещения без арендатора',
-                        style: TextStyle(fontSize: 12)),
-                    value: onlyFree,
-                    onChanged: (v) => setSheet(() => onlyFree = v),
-                    activeThumbColor: _primaryOrange,
-                    activeTrackColor: _primaryOrange.withValues(alpha: 0.4),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
                 // ── Применить ──────────────────────────────────────────
                 SizedBox(
                   width: double.infinity,
@@ -7334,9 +7279,6 @@ class MapScreenState extends State<MapScreen> {
                         maxPrice: maxPrice,
                         minArea:  minArea,
                         maxArea:  maxArea,
-                        metroStation: metro.isEmpty ? null : metro,
-                        propertyTypes: selectedTypes,
-                        onlyFree: onlyFree,
                         scoreBuckets: selectedBuckets,
                       ));
                     },

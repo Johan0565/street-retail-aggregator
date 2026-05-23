@@ -64,6 +64,10 @@ public class ScoreBreakdown {
         private String name;
         private double distanceMeters;
         private double weight;       // 0–1, exp(-d/σ)
+        // Координаты POI: фронт использует их, чтобы переместить камеру на
+        // выбранный из списка объект. null, если у бизнеса нет координат.
+        private Double latitude;
+        private Double longitude;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -78,6 +82,9 @@ public class ScoreBreakdown {
         private String name;
         private double distanceMeters;
         private double weight;
+        // Координаты POI — для перехода к нему по тапу в списке.
+        private Double latitude;
+        private Double longitude;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor

@@ -15,7 +15,7 @@ public class CacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager manager = new CaffeineCacheManager("overpassNearby", "propertyScore");
+        CaffeineCacheManager manager = new CaffeineCacheManager("overpassNearby", "overpassTransport", "propertyScore");
         manager.setCaffeine(Caffeine.newBuilder()
                 .expireAfterWrite(60, TimeUnit.MINUTES)
                 .maximumSize(1000));
