@@ -1025,6 +1025,7 @@ class _CompetitorsSheet extends StatelessWidget {
               return _competitorRow(
                 name: name,
                 color: color,
+                impact: ref?.scoreImpact ?? 0,
                 onTap: tappable ? () => onLocationTap(lat, lon) : null,
               );
             }),
@@ -1033,7 +1034,12 @@ class _CompetitorsSheet extends StatelessWidget {
     );
   }
 
-  Widget _competitorRow({required String name, required Color color, VoidCallback? onTap}) {
+  Widget _competitorRow({
+    required String name,
+    required Color color,
+    required double impact,
+    VoidCallback? onTap,
+  }) {
     final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
       child: Row(
@@ -1047,7 +1053,11 @@ class _CompetitorsSheet extends StatelessWidget {
               style: const TextStyle(fontSize: 14, color: Colors.black87),
             ),
           ),
-          if (onTap != null) Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[400]),
+          _scoreImpactChip(impact),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[400]),
+          ],
         ],
       ),
     );
@@ -1058,6 +1068,32 @@ class _CompetitorsSheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: row,
+      ),
+    );
+  }
+
+  /// Чип с дельтой балла: «−1.2» красным для конкурента, «+0.8» зелёным
+  /// для соседа, серый «0» если бизнес не повлиял на скор.
+  static Widget _scoreImpactChip(double impact) {
+    final rounded = (impact * 10).round() / 10.0;
+    final isZero = rounded.abs() < 0.05;
+    final Color color = isZero
+        ? const Color(0xFF94A3B8)
+        : (rounded > 0 ? const Color(0xFF22C55E) : const Color(0xFFEF4444));
+    final String text = isZero
+        ? '0'
+        : (rounded > 0
+            ? '+${rounded.toStringAsFixed(1)}'
+            : rounded.toStringAsFixed(1)); // знак минус уже в числе
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11),
       ),
     );
   }
@@ -1221,6 +1257,9 @@ class _SynergySheet extends StatelessWidget {
               final lat = ref?.latitude;
               final lon = ref?.longitude;
               final tappable = lat != null && lon != null;
+              // У «Выбранные категории при создании проекта» refs пустой —
+              // тогда чип не рисуем (это просто список названий категорий).
+              final hasImpactInfo = ref != null;
               final row = Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 child: Row(
@@ -1234,8 +1273,11 @@ class _SynergySheet extends StatelessWidget {
                         style: const TextStyle(fontSize: 14, color: Colors.black87),
                       ),
                     ),
-                    if (tappable)
+                    if (hasImpactInfo) _CompetitorsSheet._scoreImpactChip(ref.scoreImpact),
+                    if (tappable) ...[
+                      const SizedBox(width: 6),
                       Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[400]),
+                    ],
                   ],
                 ),
               );

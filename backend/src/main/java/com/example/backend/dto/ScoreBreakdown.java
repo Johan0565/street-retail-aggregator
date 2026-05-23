@@ -68,6 +68,10 @@ public class ScoreBreakdown {
         // выбранный из списка объект. null, если у бизнеса нет координат.
         private Double latitude;
         private Double longitude;
+        // Сколько баллов этот конкретный конкурент «съел» из competitorScore.
+        // Отрицательное (или 0). Считается как разница между текущим score и
+        // тем, что был бы без этого бизнеса.
+        private double scoreImpact;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
@@ -85,6 +89,10 @@ public class ScoreBreakdown {
         // Координаты POI — для перехода к нему по тапу в списке.
         private Double latitude;
         private Double longitude;
+        // Сколько баллов этот сосед добавил в synergyScore (положительное
+        // или 0). Соседи, не выигравшие ни одной категории, имеют 0 — они
+        // в списке для информации, но в формулу не вошли.
+        private double scoreImpact;
     }
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor

@@ -41,6 +41,10 @@ class MapScreenState extends State<MapScreen> {
   bool _isSearchingAddress = false;
   bool _mapControllerReady = false;
 
+  // Маркер фокуса — оранжевая точка, ставится при переходе из шторки
+  // деталей и убирается при первом тапе по карте.
+  PlacemarkMapObject? _focusMarker;
+
   final Color _primaryOrange = const Color(0xFFFF8C00);
 
   // ВАЖНО: Вставь сюда свой длинный JSON со стилями карты между тройными кавычками!
@@ -7093,17 +7097,78 @@ class MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Плавно перемещает камеру к выбранному POI и доводит зум до улицы. Так
-  /// MapScreen реагирует, когда пользователь тапнул конкретного конкурента
-  /// или соседа в шторке PropertyDetailsScreen-а.
-  void _focusCameraOn(double lat, double lon) {
+  /// Плавно перемещает камеру к выбранному POI, доводит зум до улицы и
+  /// ставит оранжевую точку. Точка убирается при первом тапе по карте.
+  Future<void> _focusCameraOn(double lat, double lon) async {
     if (!_mapControllerReady) return;
+    final point = Point(latitude: lat, longitude: lon);
     mapController.moveCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: Point(latitude: lat, longitude: lon), zoom: 17),
-      ),
+      CameraUpdate.newCameraPosition(CameraPosition(target: point, zoom: 17)),
       animation: const MapAnimation(type: MapAnimationType.smooth, duration: 0.6),
     );
+
+    final iconBytes = await _buildFocusDotIcon();
+    if (!mounted) return;
+    final marker = PlacemarkMapObject(
+      mapId: MapObjectId('focus_marker_${DateTime.now().microsecondsSinceEpoch}'),
+      point: point,
+      icon: PlacemarkIcon.single(
+        PlacemarkIconStyle(
+          image: BitmapDescriptor.fromBytes(iconBytes),
+          scale: 0.5,
+        ),
+      ),
+      // Точка только индикатор — не должна перехватывать тап по карте.
+      consumeTapEvents: false,
+    );
+    setState(() {
+      // Если уже был фокус — заменяем.
+      if (_focusMarker != null) {
+        mapObjects.removeWhere((o) => o.mapId == _focusMarker!.mapId);
+      }
+      _focusMarker = marker;
+      mapObjects = [...mapObjects, marker];
+    });
+  }
+
+  void _clearFocusMarker() {
+    if (_focusMarker == null) return;
+    setState(() {
+      mapObjects.removeWhere((o) => o.mapId == _focusMarker!.mapId);
+      _focusMarker = null;
+    });
+  }
+
+  /// Большая, насыщенно-оранжевая точка с белой обводкой и тенью —
+  /// чтобы её было видно поверх стилизованной серой карты.
+  Future<Uint8List> _buildFocusDotIcon() async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const size = Size(120, 120);
+    final center = Offset(size.width / 2, size.height / 2);
+
+    // Полупрозрачный ореол вокруг точки.
+    final halo = Paint()
+      ..color = _primaryOrange.withValues(alpha: 0.25)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 56, halo);
+
+    // Белая обводка-подложка.
+    final outline = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 38, outline);
+
+    // Сама оранжевая точка.
+    final dot = Paint()
+      ..color = _primaryOrange
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 30, dot);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.width.toInt(), size.height.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData!.buffer.asUint8List();
   }
 
   Widget _buildScoreBar(String label, int score, int max) {
@@ -7388,6 +7453,8 @@ class MapScreenState extends State<MapScreen> {
           // 1. КАРТА
           YandexMap(
             mapObjects: mapObjects,
+            onMapTap: (_) => _clearFocusMarker(),
+            onMapLongTap: (_) => _clearFocusMarker(),
             onMapCreated: (YandexMapController controller) {
               mapController = controller;
               _mapControllerReady = true;

@@ -77,7 +77,12 @@ public class SearchProfile {
     private BigDecimal centerLongitude;
 
     @Column(name = "search_radius_meters")
-    private Integer searchRadiusMeters; // Радиус поиска в метрах (например, 2000)
+    private Integer searchRadiusMeters; // Радиус поиска конкурентов в метрах (например, 2000)
+
+    // Отдельный радиус поиска желаемых соседей. Если null — используется
+    // searchRadiusMeters (обратная совместимость со старыми проектами).
+    @Column(name = "synergy_radius_meters")
+    private Integer synergyRadiusMeters;
 
     // Категории бизнесов, с которыми хочет быть рядом (синергичные соседи)
     @ManyToMany

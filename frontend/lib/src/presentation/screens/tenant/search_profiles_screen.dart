@@ -295,11 +295,13 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
   bool _requiresParking = false;
   bool _requiresLoadingZone = false;
 
-  // Радиус анализа окрестности (метры). Управляет и поиском конкурентов,
-  // и поиском соседей для синергии.
+  // Радиус анализа: отдельный для конкурентов и для синергии. Пользователь
+  // может хотеть «конкуренты строго рядом, но магниты-соседи — в большем
+  // охвате» (или наоборот).
   static const double _radiusMin = 200;
   static const double _radiusMax = 5000;
-  double _radiusMeters = 1000;
+  double _radiusMeters = 1000;        // конкуренты
+  double _synergyRadiusMeters = 1000; // синергия
 
   // Категория бизнеса
   List<Map<String, dynamic>> _categories = [];
@@ -340,6 +342,11 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
           .toDouble()
           .clamp(_radiusMin, _radiusMax);
     }
+    // Если для синергии радиус не задан в старом проекте — берём радиус
+    // конкурентов как разумный дефолт (поведение до разделения).
+    _synergyRadiusMeters = (p.synergyRadiusMeters ?? p.searchRadiusMeters ?? _radiusMeters.toInt())
+        .toDouble()
+        .clamp(_radiusMin, _radiusMax);
     _desiredNeighborIds
       ..clear()
       ..addAll(p.desiredNeighborCategoryIds);
@@ -378,6 +385,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
       'requiresParking': _requiresParking,
       'requiresLoadingZone': _requiresLoadingZone,
       'searchRadiusMeters': _radiusMeters.round(),
+      'synergyRadiusMeters': _synergyRadiusMeters.round(),
       if (_desiredNeighborIds.isNotEmpty)
         'desiredNeighborCategoryIds': _desiredNeighborIds.toList(),
     };
@@ -639,10 +647,38 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
   }
 
   Widget _buildRadiusSlider() {
-    final int meters = _radiusMeters.round();
-    final String label = meters >= 1000
-        ? '${(meters / 1000).toStringAsFixed(meters % 1000 == 0 ? 0 : 1)} км'
-        : '$meters м';
+    return Column(
+      children: [
+        _radiusCard(
+          icon: Icons.storefront_rounded,
+          title: 'Радиус поиска конкурентов',
+          meters: _radiusMeters,
+          hint: 'В этом радиусе считаются прямые и косвенные конкуренты.',
+          onChanged: (v) => setState(() => _radiusMeters = v),
+        ),
+        const SizedBox(height: 10),
+        _radiusCard(
+          icon: Icons.handshake_rounded,
+          title: 'Радиус поиска соседей (синергия)',
+          meters: _synergyRadiusMeters,
+          hint: 'В этом радиусе ищутся желаемые соседи. Можно сделать больше, чем для конкурентов.',
+          onChanged: (v) => setState(() => _synergyRadiusMeters = v),
+        ),
+      ],
+    );
+  }
+
+  Widget _radiusCard({
+    required IconData icon,
+    required String title,
+    required double meters,
+    required String hint,
+    required ValueChanged<double> onChanged,
+  }) {
+    final int m = meters.round();
+    final String label = m >= 1000
+        ? '${(m / 1000).toStringAsFixed(m % 1000 == 0 ? 0 : 1)} км'
+        : '$m м';
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
@@ -655,13 +691,14 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.adjust, size: 16, color: Colors.black54),
+              Icon(icon, size: 16, color: Colors.black54),
               const SizedBox(width: 6),
-              const Text(
-                'Радиус анализа окрестности',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
               ),
-              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -690,13 +727,13 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
               min: _radiusMin,
               max: _radiusMax,
               divisions: ((_radiusMax - _radiusMin) / 100).round(),
-              value: _radiusMeters.clamp(_radiusMin, _radiusMax),
+              value: meters.clamp(_radiusMin, _radiusMax),
               label: label,
-              onChanged: (v) => setState(() => _radiusMeters = v),
+              onChanged: onChanged,
             ),
           ),
           Text(
-            'В этом радиусе ищутся прямые/косвенные конкуренты и желаемые соседи для синергии.',
+            hint,
             style: TextStyle(fontSize: 11, color: Colors.grey[600], height: 1.3),
           ),
         ],

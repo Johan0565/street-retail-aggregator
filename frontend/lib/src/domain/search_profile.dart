@@ -31,6 +31,9 @@ class SearchProfile {
   final double? centerLatitude;
   final double? centerLongitude;
   final int? searchRadiusMeters;
+  /// Отдельный радиус для поиска синергичных соседей. Если null —
+  /// используется searchRadiusMeters (старые проекты).
+  final int? synergyRadiusMeters;
 
   // Желаемые соседи (категории для синергии)
   final List<int> desiredNeighborCategoryIds;
@@ -59,6 +62,7 @@ class SearchProfile {
     this.centerLatitude,
     this.centerLongitude,
     this.searchRadiusMeters,
+    this.synergyRadiusMeters,
     this.desiredNeighborCategoryIds = const [],
     this.desiredNeighborNames = const [],
     this.isActive = true,
@@ -90,6 +94,7 @@ class SearchProfile {
       centerLatitude: (json['centerLatitude'] as num?)?.toDouble(),
       centerLongitude: (json['centerLongitude'] as num?)?.toDouble(),
       searchRadiusMeters: (json['searchRadiusMeters'] as num?)?.toInt(),
+      synergyRadiusMeters: (json['synergyRadiusMeters'] as num?)?.toInt(),
       desiredNeighborCategoryIds: (json['desiredNeighbors'] is List)
           ? (json['desiredNeighbors'] as List)
               .map((e) => (e is Map ? (e['id'] as num?)?.toInt() : null))
@@ -125,6 +130,7 @@ class SearchProfile {
         if (centerLatitude != null) 'centerLatitude': centerLatitude,
         if (centerLongitude != null) 'centerLongitude': centerLongitude,
         if (searchRadiusMeters != null) 'searchRadiusMeters': searchRadiusMeters,
+        if (synergyRadiusMeters != null) 'synergyRadiusMeters': synergyRadiusMeters,
         if (desiredNeighborCategoryIds.isNotEmpty)
           'desiredNeighborCategoryIds': desiredNeighborCategoryIds,
       };
@@ -310,12 +316,16 @@ class CompetitorRef {
   final double weight;
   final double? latitude;
   final double? longitude;
+  /// Влияние этого конкурента на competitorScore. Обычно отрицательное
+  /// (отнимает баллы); 0 если у бизнеса нулевой вес.
+  final double scoreImpact;
   const CompetitorRef({
     required this.name,
     required this.distanceMeters,
     required this.weight,
     this.latitude,
     this.longitude,
+    this.scoreImpact = 0,
   });
   factory CompetitorRef.fromJson(Map<String, dynamic> j) => CompetitorRef(
         name: j['name']?.toString() ?? '',
@@ -323,6 +333,7 @@ class CompetitorRef {
         weight: (j['weight'] as num?)?.toDouble() ?? 0,
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
+        scoreImpact: (j['scoreImpact'] as num?)?.toDouble() ?? 0,
       );
 }
 
@@ -348,12 +359,16 @@ class SynergyRef {
   final double weight;
   final double? latitude;
   final double? longitude;
+  /// Сколько баллов этот сосед добавил в synergyScore. 0, если он не
+  /// выиграл ни одной категории (показан в списке для информации).
+  final double scoreImpact;
   const SynergyRef({
     required this.name,
     required this.distanceMeters,
     required this.weight,
     this.latitude,
     this.longitude,
+    this.scoreImpact = 0,
   });
   factory SynergyRef.fromJson(Map<String, dynamic> j) => SynergyRef(
         name: j['name']?.toString() ?? '',
@@ -361,6 +376,7 @@ class SynergyRef {
         weight: (j['weight'] as num?)?.toDouble() ?? 0,
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
+        scoreImpact: (j['scoreImpact'] as num?)?.toDouble() ?? 0,
       );
 }
 

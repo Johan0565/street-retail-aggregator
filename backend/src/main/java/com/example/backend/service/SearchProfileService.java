@@ -71,6 +71,7 @@ public class SearchProfileService {
         profile.setCenterLatitude(request.getCenterLatitude());
         profile.setCenterLongitude(request.getCenterLongitude());
         profile.setSearchRadiusMeters(request.getSearchRadiusMeters());
+        profile.setSynergyRadiusMeters(request.getSynergyRadiusMeters());
         profile.setDesiredNeighbors(resolveCategories(request.getDesiredNeighborCategoryIds()));
 
         return searchProfileRepository.save(profile);
@@ -146,6 +147,7 @@ public class SearchProfileService {
                 .centerLatitude(request.getCenterLatitude())
                 .centerLongitude(request.getCenterLongitude())
                 .searchRadiusMeters(request.getSearchRadiusMeters())
+                .synergyRadiusMeters(request.getSynergyRadiusMeters())
                 .desiredNeighbors(resolveCategories(request.getDesiredNeighborCategoryIds()))
                 .isActive(true)
                 .build();

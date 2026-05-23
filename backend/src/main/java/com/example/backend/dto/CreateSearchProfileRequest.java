@@ -55,6 +55,9 @@ public class CreateSearchProfileRequest {
     @Min(value = 0, message = "Радиус поиска не может быть отрицательным")
     private Integer searchRadiusMeters;
 
+    @Min(value = 0, message = "Радиус поиска соседей не может быть отрицательным")
+    private Integer synergyRadiusMeters;
+
     // --- Синергичные соседи ---
     private Set<Long> desiredNeighborCategoryIds;
 }
