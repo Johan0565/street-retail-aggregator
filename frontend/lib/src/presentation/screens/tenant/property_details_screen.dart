@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../domain/property.dart';
 import '../../../domain/search_profile.dart';
@@ -184,19 +185,37 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey[200]!),
       ),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Анализируем конкурентов поблизости...',
-            style: TextStyle(color: Colors.grey[600], fontSize: 13),
-          ),
-        ],
+      child: _Shimmer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Имитация бейджика «N% — match»
+            Row(
+              children: const [
+                _SkeletonBox(width: 18, height: 18, shape: BoxShape.circle),
+                SizedBox(width: 8),
+                _SkeletonBox(width: 170, height: 14),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // 5 строк-полосок повторяют структуру _scoreBar(label, progress, value)
+            ...List.generate(5, (i) {
+              const labelWidths = [78.0, 86.0, 92.0, 70.0, 80.0];
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    _SkeletonBox(width: labelWidths[i], height: 10),
+                    const SizedBox(width: 22),
+                    const Expanded(child: _SkeletonBox(height: 10)),
+                    const SizedBox(width: 8),
+                    const _SkeletonBox(width: 30, height: 10),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -467,23 +486,36 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       // КНОПКА ЗАЯВКИ СНИЗУ (только для арендатора)
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: !widget.isLandlordMode
-          ? Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5))]),
-        child: ElevatedButton(
-          onPressed: widget.property.status == 'ARCHIVED' ? null : () => _showApplicationSheet(context, widget.property),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: widget.property.status == 'ARCHIVED' ? Colors.grey : primaryOrange,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          child: Text(
-            widget.property.status == 'ARCHIVED' ? 'Недоступно' : 'Оставить заявку',
-            style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      )
+          ? SafeArea(
+              minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: widget.property.status == 'ARCHIVED'
+                      ? null
+                      : () => _showApplicationSheet(context, widget.property),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.property.status == 'ARCHIVED'
+                        ? Colors.grey
+                        : primaryOrange,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    elevation: 6,
+                    shadowColor: Colors.black.withValues(alpha: 0.25),
+                  ),
+                  child: Text(
+                    widget.property.status == 'ARCHIVED'
+                        ? 'Недоступно'
+                        : 'Оставить заявку',
+                    style: const TextStyle(
+                        fontSize: 18,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            )
           : null,
     );
   }
@@ -518,17 +550,14 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
           onPageChanged: (i) => setState(() => _photoIndex = i),
           itemBuilder: (ctx, i) {
             final url = ImageHelper.toAbsoluteUrl(ordered[i].imageUrl);
-            return Image.network(
-              url ?? '',
+            return CachedNetworkImage(
+              imageUrl: url ?? '',
               fit: BoxFit.cover,
-              loadingBuilder: (ctx, child, progress) {
-                if (progress == null) return child;
-                return Container(
-                  color: Colors.grey[200],
-                  child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                );
-              },
-              errorBuilder: (ctx, _, __) => Container(
+              placeholder: (ctx, _) => Container(
+                color: Colors.grey[200],
+                child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+              errorWidget: (ctx, _, _) => Container(
                 color: Colors.grey[300],
                 child: const Center(child: Icon(Icons.broken_image_outlined, size: 60, color: Colors.grey)),
               ),
@@ -659,9 +688,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
   Widget _buildCompetitorsButton(ScoredProperty scored) {
     final direct = scored.directCompetitorNames.length;
-    final indirect = scored.indirectCompetitorNames.length;
     final directRefs = scored.breakdown?.competitor?.directRefs ?? const <CompetitorRef>[];
-    final indirectRefs = scored.breakdown?.competitor?.indirectRefs ?? const <CompetitorRef>[];
 
     return GestureDetector(
       onTap: () => showModalBottomSheet(
@@ -670,9 +697,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) => _CompetitorsSheet(
           directNames: scored.directCompetitorNames,
-          indirectNames: scored.indirectCompetitorNames,
           directRefs: directRefs,
-          indirectRefs: indirectRefs,
           onLocationTap: _focusLocationAndClose,
         ),
       ),
@@ -700,20 +725,8 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                'прям. $direct',
+                '$direct',
                 style: const TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, fontSize: 11),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                'косв. $indirect',
-                style: const TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 11),
               ),
             ),
             const Spacer(),
@@ -828,7 +841,37 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
       future: _poiFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()));
+          return _Shimmer(
+            child: Column(
+              children: List.generate(5, (i) {
+                const nameWidths = [180.0, 220.0, 160.0, 200.0, 170.0];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Row(
+                    children: [
+                      const _SkeletonBox(
+                        width: 36,
+                        height: 36,
+                        shape: BoxShape.circle,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: _SkeletonBox(
+                            width: nameWidths[i],
+                            height: 13,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const _SkeletonBox(width: 42, height: 11),
+                    ],
+                  ),
+                );
+              }),
+            ),
+          );
         }
         if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
           return const Text('Данные об инфраструктуре недоступны', style: TextStyle(color: Colors.grey));
@@ -875,26 +918,22 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Шторка со списком конкурентов (прямые и косвенные)
+//  Шторка со списком прямых конкурентов
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _CompetitorsSheet extends StatelessWidget {
   final List<String> directNames;
-  final List<String> indirectNames;
   /// Дополнительная инфа с координатами. Если индекс в refs совпадает с
   /// индексом в *Names (бэкенд отдаёт их в одном порядке), элемент списка
   /// становится тапабельным и переводит карту к этому соседу.
   final List<CompetitorRef> directRefs;
-  final List<CompetitorRef> indirectRefs;
   /// Колбэк PropertyDetailsScreen-а: закрывает шторку и экран деталей,
   /// возвращая выбранные координаты на карту.
   final void Function(double lat, double lon) onLocationTap;
 
   const _CompetitorsSheet({
     required this.directNames,
-    required this.indirectNames,
     required this.directRefs,
-    required this.indirectRefs,
     required this.onLocationTap,
   });
 
@@ -950,15 +989,6 @@ class _CompetitorsSheet extends StatelessWidget {
                       names: directNames,
                       refs: directRefs,
                       emptyText: 'Прямых конкурентов рядом не найдено',
-                    ),
-                    const SizedBox(height: 20),
-                    _buildGroup(
-                      title: 'Косвенные конкуренты',
-                      count: indirectNames.length,
-                      color: const Color(0xFFF59E0B),
-                      names: indirectNames,
-                      refs: indirectRefs,
-                      emptyText: 'Косвенных конкурентов рядом не найдено',
                     ),
                   ],
                 ),
@@ -1315,6 +1345,15 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
   String? _explanation;
   bool _isLoading = true;
 
+  /// Сколько символов из [_explanation] уже «напечатано». Растёт по таймеру.
+  int _typedLength = 0;
+  Timer? _typingTimer;
+
+  /// Скорость печати: 2 символа каждые 18 мс ≈ 110 знаков/сек. Достаточно
+  /// быстро, чтобы не раздражать, но медленно, чтобы воспринималось как «AI печатает».
+  static const _typingTickMs = 18;
+  static const _typingCharsPerTick = 2;
+
   @override
   void initState() {
     super.initState();
@@ -1328,7 +1367,43 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
     setState(() {
       _explanation = result;
       _isLoading = false;
+      _typedLength = 0;
     });
+    if (result != null && result.isNotEmpty) {
+      _startTyping();
+    }
+  }
+
+  void _startTyping() {
+    _typingTimer?.cancel();
+    _typingTimer = Timer.periodic(const Duration(milliseconds: _typingTickMs), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final total = _explanation?.length ?? 0;
+      if (_typedLength >= total) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _typedLength = (_typedLength + _typingCharsPerTick).clamp(0, total);
+      });
+    });
+  }
+
+  /// Тап по тексту во время печати — мгновенно «домотать» до конца.
+  void _skipTyping() {
+    final total = _explanation?.length ?? 0;
+    if (_typedLength >= total) return;
+    _typingTimer?.cancel();
+    setState(() => _typedLength = total);
+  }
+
+  @override
+  void dispose() {
+    _typingTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -1403,21 +1478,38 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPadding + 28),
                 child: _isLoading
-                    ? Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          const _TypingIndicator(),
-                          const SizedBox(height: 16),
-                        ],
+                    ? _Shimmer(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            // «Первый абзац» — 3 строки, последняя короче
+                            _SkeletonBox(height: 13),
+                            SizedBox(height: 10),
+                            _SkeletonBox(height: 13),
+                            SizedBox(height: 10),
+                            _SkeletonBox(width: 220, height: 13),
+                            SizedBox(height: 22),
+                            // «Второй абзац» — 3 строки
+                            _SkeletonBox(height: 13),
+                            SizedBox(height: 10),
+                            _SkeletonBox(height: 13),
+                            SizedBox(height: 10),
+                            _SkeletonBox(width: 180, height: 13),
+                            SizedBox(height: 22),
+                            // «Вывод» — 2 короткие строки
+                            _SkeletonBox(width: 260, height: 13),
+                            SizedBox(height: 10),
+                            _SkeletonBox(width: 140, height: 13),
+                          ],
+                        ),
                       )
-
                     : _explanation != null
-                        ? Text(
-                            _explanation!,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              height: 1.65,
-                              color: Colors.black87,
+                        ? GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _skipTyping,
+                            child: _TypewriterText(
+                              fullText: _explanation!,
+                              typedLength: _typedLength,
                             ),
                           )
                         : const Row(
@@ -1434,6 +1526,177 @@ class _AiExplainSheetState extends State<_AiExplainSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Typewriter — постепенно проявляет [typedLength] символов из [fullText]
+//  и рисует мигающий курсор в конце, пока печать не завершена.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TypewriterText extends StatelessWidget {
+  final String fullText;
+  final int typedLength;
+
+  const _TypewriterText({required this.fullText, required this.typedLength});
+
+  @override
+  Widget build(BuildContext context) {
+    final clamped = typedLength.clamp(0, fullText.length);
+    final visible = fullText.substring(0, clamped);
+    final isDone = clamped >= fullText.length;
+
+    const textStyle = TextStyle(
+      fontSize: 15,
+      height: 1.65,
+      color: Colors.black87,
+    );
+
+    return RichText(
+      text: TextSpan(
+        style: textStyle,
+        children: [
+          TextSpan(text: visible),
+          if (!isDone)
+            const WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: _BlinkingCursor(),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BlinkingCursor extends StatefulWidget {
+  const _BlinkingCursor();
+
+  @override
+  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<_BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (_, _) {
+        final opacity = _controller.value < 0.5 ? 1.0 : 0.0;
+        return Opacity(
+          opacity: opacity,
+          child: Container(
+            margin: const EdgeInsets.only(left: 2),
+            width: 2,
+            height: 16,
+            color: const Color(0xFFFF8C00),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Skeleton — серый «слепок» итогового контента с бегущим shimmer-бликом.
+//  Используется вместо CircularProgressIndicator на карточках, чтобы загрузка
+//  ощущалась быстрее и не было прыжка макета при появлении данных.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _Shimmer extends StatefulWidget {
+  final Widget child;
+  const _Shimmer({required this.child});
+
+  @override
+  State<_Shimmer> createState() => _ShimmerState();
+}
+
+class _ShimmerState extends State<_Shimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  static const _base = Color(0xFFE5E7EB);
+  static const _highlight = Color(0xFFF7F8FA);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (_, child) {
+        // dx ∈ [-1, 2] — блик уезжает левее левого края и заезжает правее правого,
+        // чтобы цикл выглядел бесшовным.
+        final dx = _controller.value * 3 - 1;
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) => LinearGradient(
+            colors: const [_base, _highlight, _base],
+            stops: const [0.35, 0.5, 0.65],
+            begin: Alignment(dx - 1, 0),
+            end: Alignment(dx + 1, 0),
+          ).createShader(bounds),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _SkeletonBox extends StatelessWidget {
+  final double? width;
+  final double height;
+  final BoxShape shape;
+
+  const _SkeletonBox({
+    this.width,
+    required this.height,
+    this.shape = BoxShape.rectangle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE5E7EB),
+        shape: shape,
+        borderRadius:
+            shape == BoxShape.rectangle ? BorderRadius.circular(6) : null,
       ),
     );
   }

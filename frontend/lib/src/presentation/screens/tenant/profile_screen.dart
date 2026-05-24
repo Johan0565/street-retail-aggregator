@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -16,11 +17,14 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _authService = AuthService();
   final FlutterSecureStorage _storage = const FlutterSecureStorage(); // <-- Хранилище
-  late Future<UserProfile?> _profileFuture;
 
   final Color _primaryOrange = const Color(0xFFFF8C00);
   bool _notificationsEnabled = true;
   String _userRole = 'TENANT'; // По умолчанию
+
+  UserProfile? _profile;
+  bool _isLoading = false;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -28,14 +32,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadProfile();
   }
 
-  // Метод для загрузки профиля и проверки роли
   Future<void> _loadProfile() async {
     final role = await _storage.read(key: 'user_role') ?? 'TENANT';
     if (!mounted) return;
-
     setState(() {
       _userRole = role;
-      _profileFuture = _authService.getCurrentUserProfile();
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    final result = await _authService.getCurrentUserProfile();
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      if (result != null) {
+        _profile = result;
+      } else {
+        _hasError = true;
+        if (_profile != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Нет связи с сервером. Показаны последние данные.'),
+              backgroundColor: Colors.black87,
+            ),
+          );
+        }
+      }
     });
   }
 
@@ -421,16 +443,51 @@ class _ProfileScreenState extends State<ProfileScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      body: FutureBuilder<UserProfile?>(
-        future: _profileFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.black));
+      body: Builder(
+        builder: (context) {
+          if (_profile == null && _isLoading) {
+            return const Center(child: CircularProgressIndicator(color: Colors.black));
+          }
+          if (_profile == null && _hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 64, color: Colors.black38),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Не удалось загрузить профиль.\nПроверьте соединение и попробуйте снова.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 15, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: _loadProfile,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Повторить'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
 
-          final profile = snapshot.data ?? UserProfile(id: 0, name: 'Пользователь', phone: 'Не указан', inn: 'Не указан', businessCategory: 'Не выбрана');
+          final profile = _profile ?? UserProfile(id: 0, name: 'Пользователь', phone: 'Не указан', inn: 'Не указан', businessCategory: 'Не выбрана');
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 100),
-            child: Column(
+          return RefreshIndicator(
+            color: _primaryOrange,
+            onRefresh: _loadProfile,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 100),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // 1. ШАПКА
@@ -557,6 +614,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
             ),
+            ),
           );
         },
       ),
@@ -577,7 +635,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             radius: 50,
             backgroundColor: Colors.grey[200],
             backgroundImage: remoteUrl != null
-                ? NetworkImage(remoteUrl) as ImageProvider
+                ? CachedNetworkImageProvider(remoteUrl) as ImageProvider
                 : fallback,
           ),
           Positioned(

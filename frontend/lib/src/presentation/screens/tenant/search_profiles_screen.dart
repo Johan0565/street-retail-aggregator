@@ -653,7 +653,7 @@ class _CreateSearchProfileScreenState extends State<CreateSearchProfileScreen> {
           icon: Icons.storefront_rounded,
           title: 'Радиус поиска конкурентов',
           meters: _radiusMeters,
-          hint: 'В этом радиусе считаются прямые и косвенные конкуренты.',
+          hint: 'В этом радиусе считаются прямые конкуренты.',
           onChanged: (v) => setState(() => _radiusMeters = v),
         ),
         const SizedBox(height: 10),

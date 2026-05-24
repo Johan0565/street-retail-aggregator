@@ -20,9 +20,10 @@ import java.util.stream.Collectors;
  *   Финансовый мэтч   0–20  — площадь и бюджет, асимметричная гладкая функция
  *   Технический мэтч  0–20  — градиентные штрафы за дефицит мощности/потолков,
  *                              half-penalty при null-полях landlord'a
- *   Конкуренты        0–40  — все организации в радиусе через Overpass API,
+ *   Конкуренты        0–40  — прямые конкуренты в радиусе через Overpass API,
  *                              distance-weighted exp decay
- *   Синергия          0–15  — соседство с желаемыми категориями, distance-aware
+ *   Синергия          0–15  — соседство с желаемыми категориями, distance-aware,
+ *                              насыщающаяся сумма весов (количество соседей даёт прирост)
  *   Транспорт         0–5   — близость общественного транспорта (метро ценнее
  *                              автобуса), distance-weighted exp decay
  *
@@ -82,12 +83,20 @@ public class PropertyScoringService {
     // Жёсткость экспоненциального спада итогового балла конкурентов.
     // Калибровка: один близкий direct (вес≈0.86) → score≈12.8 (≈ прежние 12).
     private static final double COMPETITOR_DECAY_K_DIRECT   = 1.0;
-    // Косвенный конкурент в ~3× мягче прямого.
-    private static final double COMPETITOR_DECAY_K_INDIRECT = 0.3;
     // Если Overpass не отдал координаты конкретного POI — используем «средний»
     // вес, чтобы он всё-таки участвовал в формуле, но не доминировал.
     private static final double FALLBACK_WEIGHT_MISSING_COORDS = 0.2;
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
+    // --- Синергия: насыщающаяся сумма весов на категорию ---
+    // per_category = 1 - exp(-Σweight_i / K). Прежний вариант «брать только
+    // ближайшего» приводил к 6/15 при 200+ соседях в 2 категориях, потому что
+    // одиночный сосед в ~300м даёт weight≈0.4, и 0.4*15=6. Теперь любое скопление
+    // соседей в категории насыщает её вклад до 1.0.
+    // Калибровка K=0.7: один сосед «у двери» (weight=1) → 0.76, два по weight=0.5
+    // (Σ=1) → 0.76, пять в 300м (Σ≈2) → 0.94. Большая «масса» соседей быстро
+    // выходит на плато, как и должно быть для понятия «синергия».
+    private static final double SYNERGY_SATURATION_K = 0.7;
 
     // =========================================================================
     //  ПУБЛИЧНЫЕ МЕТОДЫ
@@ -144,7 +153,6 @@ public class PropertyScoringService {
                 .synergyScore(neighborhood.synergyScore())
                 .transportScore(transport.score())
                 .directCompetitorNames(neighborhood.directNames())
-                .indirectCompetitorNames(neighborhood.indirectNames())
                 .synergyNeighborNames(neighborhood.synergyNames())
                 .matchLabel(resolveMatchLabel(total))
                 .matchColor(resolveMatchColor(total))
@@ -411,25 +419,28 @@ public class PropertyScoringService {
     //  Конкуренты (0–40 баллов) — distance-aware smooth decay:
     //    weight_i = exp(-distance_i / σ),  σ = radius / 3
     //    weightedDirect   = Σ weight_i по прямым конкурентам
-    //    weightedIndirect = Σ weight_i по косвенным
-    //    competitorScore  = 40 * exp(-1.0 * weightedDirect - 0.3 * weightedIndirect)
+    //    competitorScore  = 40 * exp(-1.0 * weightedDirect)
     //
     //  Почему так, а не step-функция: в Москве в радиусе 1км может быть 50+
     //  организаций той же категории, и прежняя «5+ direct = 0» обнуляла все
     //  адреса в плотных районах. Теперь 5 далёких конкурентов (по 900м) дают
-    //  ~23/30, 5 близких (по 50м) — ~1/30, а абсолютные числа не клипают
-    //  значение в 0.
+    //  ~23/40, 5 близких (по 50м) — ~1/40, а абсолютные числа не клипают
+    //  значение в 0. Понятие «косвенный конкурент» убрано: на практике
+    //  оно даёт шум — соседняя пекарня для кофейни всё равно «магнит»,
+    //  а не угроза, и пользователи путались с тем, почему такие POI
+    //  «снимают» баллы.
     //
-    //  Синергия (0–15 баллов) — distance-aware:
-    //    Для каждой желаемой категории берём максимум веса по найденным POI,
-    //    усредняем по всем желаемым категориям, домножаем на 15.
-    //    Сосед через дорогу теперь весит больше, чем через 1 км.
+    //  Синергия (0–15 баллов) — distance-aware, насыщающаяся сумма весов:
+    //    Для каждой желаемой категории суммируем веса всех найденных POI и
+    //    прогоняем через 1-exp(-Σ/K). Один сосед даёт значимый вклад,
+    //    скопление быстро выходит на плато 1.0. Усредняем по всем желаемым
+    //    категориям, домножаем на 15. Сосед через дорогу весит больше, чем
+    //    через 1км; «100 кафе» уже не сводятся к «один ближайший».
     // =========================================================================
 
     private record NeighborhoodResult(
             int competitorScore,
             List<String> directNames,
-            List<String> indirectNames,
             int synergyScore,
             List<String> synergyNames,
             ScoreBreakdown.CompetitorPart competitorPart,
@@ -442,12 +453,12 @@ public class PropertyScoringService {
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
             ScoreBreakdown.CompetitorPart cp = ScoreBreakdown.CompetitorPart.builder()
-                    .directRefs(List.of()).indirectRefs(List.of())
+                    .directRefs(List.of())
                     .totalNearbyBusinesses(0).radiusMeters(0)
                     .build();
             ScoreBreakdown.SynergyPart sp = ScoreBreakdown.SynergyPart.builder()
                     .refs(List.of()).build();
-            return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
+            return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(),
                                           MAX_SYNERGY_SCORE, List.of(), cp, sp);
         }
 
@@ -471,8 +482,7 @@ public class PropertyScoringService {
                 : null;
         // Корневая категория (например «Еда и напитки») сама не имеет osmTags,
         // её роль — контейнер. Если арендатор выбрал корень, прямыми считаются
-        // ВСЕ подкатегории-дети этого корня (кафе+ресторан+пекарня и т.д.),
-        // а «косвенных» для такой цели не бывает.
+        // ВСЕ подкатегории-дети этого корня (кафе+ресторан+пекарня и т.д.).
         boolean targetIsRoot = targetParentId == null;
         double lat = property.getLatitude().doubleValue();
         double lon = property.getLongitude().doubleValue();
@@ -498,40 +508,48 @@ public class PropertyScoringService {
                     property.getId(), target.getName(), desiredNeighborIds.size(),
                     MAX_COMPETITOR_SCORE, MAX_COMPETITOR_SCORE);
             ScoreBreakdown.CompetitorPart cp = ScoreBreakdown.CompetitorPart.builder()
-                    .directRefs(List.of()).indirectRefs(List.of())
+                    .directRefs(List.of())
                     .totalNearbyBusinesses(0).radiusMeters(radius)
                     .build();
             ScoreBreakdown.SynergyPart sp = ScoreBreakdown.SynergyPart.builder()
                     .desiredCategoriesCount(desiredNeighborIds.size())
                     .foundCategoriesCount(0)
                     .refs(List.of()).build();
-            return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(), List.of(),
+            return new NeighborhoodResult(MAX_COMPETITOR_SCORE, List.of(),
                                           synergyEmpty, List.of(), cp, sp);
         }
 
-        // ------- Классификация: direct / indirect / synergy с distance-aware весами -------
+        // ------- Классификация: direct / synergy с distance-aware весами -------
         final double sigma = Math.max(radius / DISTANCE_SIGMA_DIVISOR, 50.0);
 
-        double weightedDirect   = 0.0;
-        double weightedIndirect = 0.0;
-        long directCount   = 0;
-        long indirectCount = 0;
+        double weightedDirect = 0.0;
+        long directCount = 0;
         // {name, distance, weight} для UI/AI: сортируем по близости.
-        List<ScoreBreakdown.CompetitorRef> directRanked   = new ArrayList<>();
-        List<ScoreBreakdown.CompetitorRef> indirectRanked = new ArrayList<>();
+        List<ScoreBreakdown.CompetitorRef> directRanked = new ArrayList<>();
+        // Сырые веса конкурентов (без округления до 2 знаков) — для атрибуции
+        // impact пропорционально полному w, иначе дальние POI с весом <0.005
+        // округляются в 0 и их доля от потери баллов исчезает.
+        List<Double> directRawWeights = new ArrayList<>();
         // Для синергии:
-        //  - synergyBest хранит ЛУЧШЕГО (max weight = ближайшего) кандидата
-        //    по каждой желаемой категории — используется в формуле скоринга,
-        //    чтобы один «выбранный» сосед давал максимум вклад один раз.
-        //  - synergyAllRefs — ВСЕ найденные совпадения, для списка в UI:
-        //    пользователь хочет видеть все «Кафе», «Бары» и т.д. в радиусе,
-        //    а не один ближайший. Аналог поведения списка конкурентов.
-        Map<Long, ScoreBreakdown.SynergyRef> synergyBest = new LinkedHashMap<>();
+        //  - synergyTotalPerCategory — сумма весов всех соседей по каждой
+        //    желаемой категории. Используется в насыщающейся формуле
+        //    1 - exp(-Σ/K), чтобы скопление соседей давало больший балл,
+        //    чем один ближайший.
+        //  - synergyMatchesPerBusiness — список категорий, под которые
+        //    подпал каждый бизнес. Нужен потом для расчёта scoreImpact:
+        //    маржинальный вклад «без этого POI» по каждой его категории.
+        //  - synergyAllRefs — ВСЕ найденные совпадения, для списка в UI.
+        Map<Long, Double> synergyTotalPerCategory = new LinkedHashMap<>();
         List<ScoreBreakdown.SynergyRef> synergyAllRefs = new ArrayList<>();
+        List<Set<Long>> synergyMatchesPerBusiness = new ArrayList<>();
+        // Сырые (не округлённые до 2 знаков) веса POI для атрибуции импактов.
+        // Без них дальние POI с весом <0.005 после round2 становятся 0 и не
+        // получают своей доли от per_category, хотя в Σw_категории они учтены.
+        // Тогда сумма видимых +X.X не сходится с балом синергии.
+        List<Double> synergyRawWeights = new ArrayList<>();
 
         for (NearbyBusiness business : nearbyBusinesses) {
-            boolean isDirect   = false;
-            boolean isIndirect = false;
+            boolean isDirect = false;
             Set<Long> synergyMatchesForBusiness = new HashSet<>();
 
             // Собираем все категории, под которые подпадает бизнес,
@@ -564,12 +582,6 @@ public class PropertyScoringService {
                         }
                     }
                 }
-                if (!isIndirect && !isDirect && !targetIsRoot && targetParentId != null) {
-                    // косвенный — sibling (общий родитель), только для листовых целей
-                    if (targetParentId.equals(matchedParentId)) {
-                        isIndirect = true;
-                    }
-                }
                 // Синергия: матчим как по точному id, так и по родителю —
                 // иначе выбор «корневой» категории желаемого соседа (например,
                 // «Кафе и рестораны») не подхватывал бы бизнесы в её подкатегориях
@@ -597,16 +609,11 @@ public class PropertyScoringService {
             boolean withinCompetitorRadius = distanceMeters < 0 || distanceMeters <= competitorRadius;
             boolean withinSynergyRadius    = distanceMeters < 0 || distanceMeters <= synergyRadius;
 
-            if (withinCompetitorRadius) {
-                if (isDirect) {
-                    directCount++;
-                    weightedDirect += weight;
-                    directRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight, bLat, bLon));
-                } else if (isIndirect) {
-                    indirectCount++;
-                    weightedIndirect += weight;
-                    indirectRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight, bLat, bLon));
-                }
+            if (withinCompetitorRadius && isDirect) {
+                directCount++;
+                weightedDirect += weight;
+                directRanked.add(buildCompetitorRef(business.name(), distanceMeters, weight, bLat, bLon));
+                directRawWeights.add(weight);
             }
 
             if (withinSynergyRadius && !synergyMatchesForBusiness.isEmpty()) {
@@ -617,33 +624,23 @@ public class PropertyScoringService {
                         .latitude(bLat)
                         .longitude(bLon)
                         .build();
-                // Один бизнес может матчиться сразу под несколько желаемых
-                // категорий — в списке UI всё равно показываем его один раз.
                 synergyAllRefs.add(ref);
+                synergyMatchesPerBusiness.add(synergyMatchesForBusiness);
+                synergyRawWeights.add(weight);
                 for (Long catId : synergyMatchesForBusiness) {
-                    ScoreBreakdown.SynergyRef prev = synergyBest.get(catId);
-                    if (prev == null || weight > prev.getWeight()) {
-                        synergyBest.put(catId, ref);
-                    }
+                    synergyTotalPerCategory.merge(catId, weight, Double::sum);
                 }
             }
         }
 
-        // Сортировка по близости: ближайший конкурент первым.
-        directRanked.sort(Comparator.comparingDouble(ScoreBreakdown.CompetitorRef::getWeight).reversed());
-        indirectRanked.sort(Comparator.comparingDouble(ScoreBreakdown.CompetitorRef::getWeight).reversed());
-        List<String> directNames   = directRanked.stream().map(ScoreBreakdown.CompetitorRef::getName).collect(Collectors.toList());
-        List<String> indirectNames = indirectRanked.stream().map(ScoreBreakdown.CompetitorRef::getName).collect(Collectors.toList());
-
-        log.info("[COMP-SCORE] property={}: прямых={} (вес={}), косвенных={} (вес={}), всего бизнесов в радиусе={}, σ={}м",
+        log.info("[COMP-SCORE] property={}: прямых={} (вес={}), всего бизнесов в радиусе={}, σ={}м",
                 property.getId(),
                 directCount, String.format("%.2f", weightedDirect),
-                indirectCount, String.format("%.2f", weightedIndirect),
                 nearbyBusinesses.size(), (int) sigma);
 
-        if (directCount == 0 && indirectCount == 0 && !nearbyBusinesses.isEmpty()) {
+        if (directCount == 0 && !nearbyBusinesses.isEmpty()) {
             int sample = Math.min(5, nearbyBusinesses.size());
-            log.warn("[COMP-NO-MATCH] property={}: ни один из {} бизнесов не классифицирован. Первые {} для проверки тегов:",
+            log.warn("[COMP-NO-MATCH] property={}: ни один из {} бизнесов не классифицирован как прямой конкурент. Первые {} для проверки тегов:",
                     property.getId(), nearbyBusinesses.size(), sample);
             for (int i = 0; i < sample; i++) {
                 NearbyBusiness b = nearbyBusinesses.get(i);
@@ -651,24 +648,32 @@ public class PropertyScoringService {
             }
         }
 
-        double exponent = COMPETITOR_DECAY_K_DIRECT * weightedDirect
-                        + COMPETITOR_DECAY_K_INDIRECT * weightedIndirect;
-        double competitorScoreD = MAX_COMPETITOR_SCORE * Math.exp(-exponent);
+        double competitorScoreD = MAX_COMPETITOR_SCORE
+                * Math.exp(-COMPETITOR_DECAY_K_DIRECT * weightedDirect);
         int competitorScore = (int) Math.round(competitorScoreD);
         competitorScore = Math.max(0, Math.min(MAX_COMPETITOR_SCORE, competitorScore));
 
         // Сколько каждый конкурент «съел» из competitorScore.
-        // Score = MAX * exp(-(K*Wd + K'*Wi)). Без этого бизнеса экспонента
-        // меньше на K*w_i, итоговый балл выше в exp(K*w_i) раз. Разница и
-        // есть его влияние — храним как отрицательное число.
-        for (ScoreBreakdown.CompetitorRef ref : directRanked) {
-            double impact = competitorScoreD * (1.0 - Math.exp(COMPETITOR_DECAY_K_DIRECT * ref.getWeight()));
-            ref.setScoreImpact(round2(impact));
+        // Общая потеря = MAX - score; делим её между конкурентами
+        // пропорционально их СЫРОМУ весу (w_i / Σw). Это единственная разбивка,
+        // при которой Σ impacts по списку = (MAX - score). Используем сырой
+        // вес, а не ref.getWeight() (тот округлён до 2 знаков и обнуляет
+        // дальние POI), чтобы сумма импактов сходилась с реальной потерей.
+        // Атрибуцию делаем до сортировки, пока indices синхронны с
+        // directRawWeights.
+        double totalLost = MAX_COMPETITOR_SCORE - competitorScoreD;
+        if (weightedDirect > 0.0) {
+            for (int i = 0; i < directRanked.size(); i++) {
+                double wRaw = directRawWeights.get(i);
+                double impact = -totalLost * (wRaw / weightedDirect);
+                directRanked.get(i).setScoreImpact(round2(impact));
+            }
         }
-        for (ScoreBreakdown.CompetitorRef ref : indirectRanked) {
-            double impact = competitorScoreD * (1.0 - Math.exp(COMPETITOR_DECAY_K_INDIRECT * ref.getWeight()));
-            ref.setScoreImpact(round2(impact));
-        }
+
+        // Сортировка по близости: ближайший конкурент первым (после атрибуции,
+        // чтобы не сломать соответствие с directRawWeights).
+        directRanked.sort(Comparator.comparingDouble(ScoreBreakdown.CompetitorRef::getWeight).reversed());
+        List<String> directNames = directRanked.stream().map(ScoreBreakdown.CompetitorRef::getName).collect(Collectors.toList());
 
         int synergyScore;
         List<String> synergyNames = new ArrayList<>();
@@ -676,29 +681,43 @@ public class PropertyScoringService {
         if (desiredNeighborIds.isEmpty()) {
             synergyScore = MAX_SYNERGY_SCORE;
         } else {
-            // Скоринг — по «лучшему на категорию», чтобы 100 кафе подряд
-            // не давали 100× балл, а вклад был ровно «1 категория из M».
-            double sumMaxWeights = 0.0;
+            // Скоринг — насыщающаяся сумма весов на категорию:
+            //   per_category = 1 - exp(-Σ / K)
+            //   normalized   = avg(per_category по всем желаемым категориям)
+            // Так скопление 100 соседей в категории доводит её вклад до 1.0,
+            // а единичный далёкий сосед даёт мало — это и есть ожидание
+            // «много магнитов = синергия большая».
+            double sumPerCategory = 0.0;
             for (Long catId : desiredNeighborIds) {
-                ScoreBreakdown.SynergyRef ref = synergyBest.get(catId);
-                sumMaxWeights += ref == null ? 0.0 : ref.getWeight();
+                Double totalW = synergyTotalPerCategory.get(catId);
+                double pc = totalW == null ? 0.0 : 1.0 - Math.exp(-totalW / SYNERGY_SATURATION_K);
+                sumPerCategory += pc;
             }
-            double normalized = sumMaxWeights / desiredNeighborIds.size();
-            synergyScore = (int) Math.round(MAX_SYNERGY_SCORE * normalized);
+            double normalized = sumPerCategory / desiredNeighborIds.size();
+            double synergyScoreD = MAX_SYNERGY_SCORE * normalized;
+            synergyScore = (int) Math.round(synergyScoreD);
             synergyScore = Math.max(0, Math.min(MAX_SYNERGY_SCORE, synergyScore));
 
-            // Сколько каждый сосед добавил в synergyScore. Считаем по числу
-            // категорий, в которых данный бизнес стал «лучшим»: contribution =
-            // (MAX_SYN / N) * weight * k. Сравниваем refs по identity, так как
-            // в synergyBest могут лежать одни и те же экземпляры на разные id.
-            java.util.IdentityHashMap<ScoreBreakdown.SynergyRef, Integer> bestCount = new java.util.IdentityHashMap<>();
-            for (ScoreBreakdown.SynergyRef bestRef : synergyBest.values()) {
-                bestCount.merge(bestRef, 1, Integer::sum);
-            }
+            // Атрибуция баллов на POI: для каждой категории её вклад
+            // unit · per_category делим между всеми соседями этой категории
+            // ПРОПОРЦИОНАЛЬНО их весу (доля w_i / Σw_категории). Это
+            // единственная разбивка, при которой Σ impacts по списку
+            // строго равна synergyScore. Если соседа считать через
+            // маржинал «что без него было бы», насыщающая функция
+            // приписывает каждому почти ноль, и сумма уходит ниже балла —
+            // именно так получалось «12/15 в шапке vs 4 в сумме списка».
             double unit = (double) MAX_SYNERGY_SCORE / desiredNeighborIds.size();
-            for (ScoreBreakdown.SynergyRef ref : synergyAllRefs) {
-                Integer k = bestCount.get(ref);
-                double impact = k == null ? 0.0 : unit * ref.getWeight() * k;
+            for (int i = 0; i < synergyAllRefs.size(); i++) {
+                ScoreBreakdown.SynergyRef ref = synergyAllRefs.get(i);
+                Set<Long> matches = synergyMatchesPerBusiness.get(i);
+                double wRaw = synergyRawWeights.get(i);
+                double impact = 0.0;
+                for (Long catId : matches) {
+                    Double totalW = synergyTotalPerCategory.get(catId);
+                    if (totalW == null || totalW <= 0.0) continue;
+                    double pc = 1.0 - Math.exp(-totalW / SYNERGY_SATURATION_K);
+                    impact += unit * pc * (wRaw / totalW);
+                }
                 ref.setScoreImpact(round2(impact));
             }
 
@@ -711,23 +730,21 @@ public class PropertyScoringService {
 
         log.info("[SYNERGY] property={}: желаемых соседей={}, найдено категорий={}, найдено бизнесов={}, балл={}/{}",
                 property.getId(), desiredNeighborIds.size(),
-                synergyBest.size(), synergyAllRefs.size(), synergyScore, MAX_SYNERGY_SCORE);
+                synergyTotalPerCategory.size(), synergyAllRefs.size(), synergyScore, MAX_SYNERGY_SCORE);
 
         ScoreBreakdown.CompetitorPart competitorPart = ScoreBreakdown.CompetitorPart.builder()
                 .weightedDirect(round2(weightedDirect))
-                .weightedIndirect(round2(weightedIndirect))
                 .directRefs(directRanked)
-                .indirectRefs(indirectRanked)
                 .totalNearbyBusinesses(nearbyBusinesses.size())
                 .radiusMeters(radius)
                 .build();
         ScoreBreakdown.SynergyPart synergyPart = ScoreBreakdown.SynergyPart.builder()
                 .desiredCategoriesCount(desiredNeighborIds.size())
-                .foundCategoriesCount(synergyBest.size())
+                .foundCategoriesCount(synergyTotalPerCategory.size())
                 .refs(synergyRefs)
                 .build();
 
-        return new NeighborhoodResult(competitorScore, directNames, indirectNames,
+        return new NeighborhoodResult(competitorScore, directNames,
                                       synergyScore, synergyNames,
                                       competitorPart, synergyPart);
     }

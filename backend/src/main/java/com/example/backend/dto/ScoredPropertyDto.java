@@ -27,8 +27,6 @@ public class ScoredPropertyDto {
     @Builder.Default
     private List<String> directCompetitorNames   = List.of();
     @Builder.Default
-    private List<String> indirectCompetitorNames = List.of();
-    @Builder.Default
     private List<String> synergyNeighborNames    = List.of();
 
     private String matchLabel;    // "🔥 Отличный мэтч!", "👍 Хороший вариант", ...

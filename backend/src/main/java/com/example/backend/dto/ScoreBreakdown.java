@@ -51,10 +51,8 @@ public class ScoreBreakdown {
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class CompetitorPart {
         private double weightedDirect;
-        private double weightedIndirect;
         /** Сортировка — ближайшие первыми (по убыванию веса). */
         private List<CompetitorRef> directRefs;
-        private List<CompetitorRef> indirectRefs;
         private int totalNearbyBusinesses;
         private int radiusMeters;
     }

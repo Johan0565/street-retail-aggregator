@@ -28,7 +28,10 @@ public class RestClientConfig {
     public RestClient openRouterRestClient(@Value("${openrouter.api.key}") String apiKey) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5_000);
-        factory.setReadTimeout(40_000); // LLM может думать до 30-40 сек
+        // DeepSeek V3 free-tier иногда стоит в очереди; для блочного ответа
+        // ~900 токенов запас по таймауту — обязателен, иначе будет fallback
+        // даже когда модель в итоге отвечает корректно.
+        factory.setReadTimeout(60_000);
         return RestClient.builder()
                 .requestFactory(factory)
                 .baseUrl("https://openrouter.ai/api/v1")

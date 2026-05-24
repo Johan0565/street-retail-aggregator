@@ -146,7 +146,6 @@ class ScoredProperty {
   final int synergyScore;     // 0-15 (синергия с желаемыми соседями, distance-aware)
   final int transportScore;   // 0-5  (близость общественного транспорта)
   final List<String> directCompetitorNames;
-  final List<String> indirectCompetitorNames;
   final List<String> synergyNeighborNames;
   final String matchLabel;
   final String matchColor;    // "green", "yellow", "red"
@@ -163,7 +162,6 @@ class ScoredProperty {
     required this.matchLabel,
     required this.matchColor,
     this.directCompetitorNames = const [],
-    this.indirectCompetitorNames = const [],
     this.synergyNeighborNames = const [],
     this.breakdown,
   });
@@ -182,7 +180,6 @@ class ScoredProperty {
       synergyScore: (json['synergyScore'] as num?)?.toInt() ?? 0,
       transportScore: (json['transportScore'] as num?)?.toInt() ?? 0,
       directCompetitorNames: parseStringList(json['directCompetitorNames']),
-      indirectCompetitorNames: parseStringList(json['indirectCompetitorNames']),
       synergyNeighborNames: parseStringList(json['synergyNeighborNames']),
       matchLabel: json['matchLabel']?.toString() ?? '',
       matchColor: json['matchColor']?.toString() ?? 'red',
@@ -279,28 +276,18 @@ class TechnicalItem {
 
 class CompetitorPart {
   final double weightedDirect;
-  final double weightedIndirect;
   final List<CompetitorRef> directRefs;
-  final List<CompetitorRef> indirectRefs;
   final int totalNearbyBusinesses;
   final int radiusMeters;
   const CompetitorPart({
     this.weightedDirect = 0,
-    this.weightedIndirect = 0,
     this.directRefs = const [],
-    this.indirectRefs = const [],
     this.totalNearbyBusinesses = 0,
     this.radiusMeters = 0,
   });
   factory CompetitorPart.fromJson(Map<String, dynamic> j) => CompetitorPart(
         weightedDirect: (j['weightedDirect'] as num?)?.toDouble() ?? 0,
-        weightedIndirect: (j['weightedIndirect'] as num?)?.toDouble() ?? 0,
         directRefs: (j['directRefs'] as List?)
-                ?.whereType<Map<String, dynamic>>()
-                .map(CompetitorRef.fromJson)
-                .toList() ??
-            const [],
-        indirectRefs: (j['indirectRefs'] as List?)
                 ?.whereType<Map<String, dynamic>>()
                 .map(CompetitorRef.fromJson)
                 .toList() ??

@@ -215,21 +215,27 @@ public class OverpassPlacesService {
 
     /**
      * Запрос за транспортными узлами вокруг точки. Берём:
-     *   railway=station          (метро + жд + любые станции)
+     *   railway=station          (метро + жд + любые станции) — ТОЛЬКО с name,
+     *                             иначе в OSM Москвы прилетают «технические»
+     *                             ноды с ref=5 (линия) или operator-only.
      *   railway=subway_entrance  (входы в метро — ценнее центра станции
-     *                             для пешеходного трафика)
-     *   railway=tram_stop        (трамвайные остановки)
-     *   highway=bus_stop         (автобусные остановки — основной OSM-тег)
-     *   public_transport=station (новая схема для крупных пересадочных)
+     *                             для пешеходного трафика) — ТОЛЬКО с name.
+     *   railway=tram_stop        (трамвайные остановки) — без фильтра name.
+     *   highway=bus_stop         (автобусные остановки) — без фильтра name:
+     *                             в OSM их нередко мапят без имени, лучше
+     *                             показать «автобусная остановка», чем
+     *                             потерять полностью.
+     *   public_transport=station (новая схема для крупных пересадочных) —
+     *                             ТОЛЬКО с name.
      */
     private String buildTransportQuery(double lat, double lon, int radiusMeters) {
         String around = "around:" + radiusMeters + "," + lat + "," + lon;
         StringBuilder q = new StringBuilder("[out:json][timeout:25];(");
-        q.append("nwr[railway=station](").append(around).append(");");
-        q.append("nwr[railway=subway_entrance](").append(around).append(");");
+        q.append("nwr[railway=station][name](").append(around).append(");");
+        q.append("nwr[railway=subway_entrance][name](").append(around).append(");");
         q.append("nwr[railway=tram_stop](").append(around).append(");");
         q.append("nwr[highway=bus_stop](").append(around).append(");");
-        q.append("nwr[public_transport=station](").append(around).append(");");
+        q.append("nwr[public_transport=station][name](").append(around).append(");");
         q.append(");out tags center 500;");
         return q.toString();
     }
@@ -251,7 +257,7 @@ public class OverpassPlacesService {
                 TransportStop.TransportType stopType = classifyTransport(tags);
                 if (stopType == null) continue;
 
-                String name = bestName(tags);
+                String name = bestTransportName(tags);
                 if (name == null || name.isBlank()) {
                     name = defaultTransportName(stopType);
                 }
@@ -361,6 +367,25 @@ public class OverpassPlacesService {
     private String bestName(JsonNode tags) {
         // Приоритет — русское имя для UI/AI-объяснений
         String[] candidates = {"name:ru", "name", "brand", "operator", "official_name", "short_name"};
+        for (String c : candidates) {
+            JsonNode n = tags.get(c);
+            if (n != null && !n.isMissingNode()) {
+                String s = n.asText("").trim();
+                if (!s.isEmpty()) return s;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Имя транспортной остановки. В отличие от {@link #bestName}, НЕ падает
+     * в {@code operator}/{@code brand}/{@code ref}: для метро это даёт
+     * «ГУП "Московский метрополитен"» или просто номер линии («5») вместо
+     * названия станции — мусор в UI. Если ни одного человеческого имени
+     * нет — вызывающий код подставит дефолт типа («метро» и т.п.).
+     */
+    private String bestTransportName(JsonNode tags) {
+        String[] candidates = {"name:ru", "name", "official_name", "alt_name", "short_name"};
         for (String c : candidates) {
             JsonNode n = tags.get(c);
             if (n != null && !n.isMissingNode()) {
