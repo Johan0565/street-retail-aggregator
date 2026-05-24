@@ -8,8 +8,13 @@ import '../domain/search_profile.dart';
 class SearchProfileService {
   final Dio _dio = Dio(BaseOptions(
     baseUrl: ApiConfig.apiUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 30),
+    // 240 секунд — запас для тяжёлой операции /scored-properties: 20+
+    // помещений × 2 Overpass-запроса каждое, под нагрузкой Overpass.de
+    // отвечает 10–25с. С пулом 8 и параллелизацией IO внутри помещения
+    // батч укладывается в 30–60с штатно, до 180с — в редких пиках.
+    receiveTimeout: const Duration(seconds: 240),
+    sendTimeout: const Duration(seconds: 30),
   ));
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -99,22 +104,19 @@ class SearchProfileService {
 
   /// Получить все помещения со скорингом по конкретному профилю.
   /// Результат уже отсортирован по убыванию totalScore.
+  /// Бросает [DioException] при сетевой ошибке/таймауте — чтобы UI мог
+  /// отличить «пусто» (нет подходящих объектов) от «не ответил сервер».
   Future<List<ScoredProperty>> getScoredProperties(int profileId) async {
-    try {
-      final response = await _dio.get(
-        '/search-profiles/$profileId/scored-properties',
-        options: await _authOptions(),
-      );
-      if (response.statusCode == 200) {
-        final List<dynamic> data = response.data;
-        return data
-            .map((json) => ScoredProperty.fromJson(json as Map<String, dynamic>))
-            .toList();
-      }
-      return [];
-    } on DioException catch (e) {
-      print('Ошибка скоринга: ${e.response?.statusCode} - ${e.response?.data}');
-      return [];
+    final response = await _dio.get(
+      '/search-profiles/$profileId/scored-properties',
+      options: await _authOptions(),
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = response.data;
+      return data
+          .map((json) => ScoredProperty.fromJson(json as Map<String, dynamic>))
+          .toList();
     }
+    return [];
   }
 }

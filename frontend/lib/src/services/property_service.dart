@@ -13,10 +13,29 @@ import '../domain/search_profile.dart';
 class PropertyService {
   final Dio _dio = Dio(BaseOptions(
     baseUrl: ApiConfig.apiUrl,
-    connectTimeout: const Duration(seconds: 5),
-    receiveTimeout: const Duration(seconds: 5),
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+    sendTimeout: const Duration(seconds: 30),
   ));
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  /// Загружает полный объект по id — включая полный список картинок,
+  /// которые могут отсутствовать в списочных эндпоинтах.
+  Future<Property?> getPropertyById(int id) async {
+    try {
+      final token = await _storage.read(key: 'jwt_token');
+      final response = await _dio.get(
+        '/properties/$id',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return Property.fromJson(response.data as Map<String, dynamic>);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
   Future<bool> toggleFavorite(int propertyId) async {
     try {
       final token = await _storage.read(key: 'jwt_token');

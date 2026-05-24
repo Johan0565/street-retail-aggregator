@@ -1,0 +1,107 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260524122238
+Username: COMPUDACKTER\User
+RunAs User: COMPUDACKTER\User
+Configuration Name: 
+Machine: COMPUDACKTER (Microsoft Windows NT 10.0.26100.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Games\street-retail-aggregator\install-services.ps1
+Process ID: 18372
+PSVersion: 5.1.26100.7462
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.7462
+BuildVersion: 10.0.26100.7462
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is C:\Games\street-retail-aggregator\install-services.log
+=== STEP 1: Install NSSM ===
+Found an existing package already installed. Trying to upgrade the installed package...
+No available upgrade found.
+No newer package versions are available from the configured sources.
+NSSM at: C:\Program Files\WinGet\Packages\NSSM.NSSM_Microsoft.Winget.Source_8wekyb3d8bbwe\nssm-2.24-101-g897c7ad\win64\nssm.exe
+=== STEP 2: Install cloudflared service ===
+cloudflared.exe : 2026-05-24T09:22:41Z INF Installing cloudflared Windows service
+At C:\Games\street-retail-aggregator\install-services.ps1:16 char:1
++ & 'C:\Program Files (x86)\cloudflared\cloudflared.exe' --config 'C:\U ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-05-24T09:2...Windows service:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+2026-05-24T09:22:41Z INF cloudflared agent service is installed windowsServiceName=Cloudflared
+2026-05-24T09:22:42Z INF Agent service for cloudflared installed successfully windowsServiceName=Cloudflared
+cloudflared.exe : 2026-05-24T09:22:41Z INF Installing cloudflared Windows service
+At C:\Games\street-retail-aggregator\install-services.ps1:16 char:1
++ & 'C:\Program Files (x86)\cloudflared\cloudflared.exe' --config 'C:\U ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026-05-24T09:2...Windows service:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+2026-05-24T09:22:41Z INF cloudflared agent service is installed windowsServiceName=Cloudflared
+2026-05-24T09:22:42Z INF Agent service for cloudflared installed successfully windowsServiceName=Cloudflared
+=== STEP 3: Remove old retail-backend service if exists ===
+nssm.exe : Can't open service!
+At C:\Games\street-retail-aggregator\install-services.ps1:19 char:1
++ & $nssm stop retail-backend 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Can't open service!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+OpenService(): The specified service does not exist as an installed service.
+
+
+
+nssm.exe : Can't open service!
+At C:\Games\street-retail-aggregator\install-services.ps1:19 char:1
++ & $nssm stop retail-backend 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Can't open service!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+OpenService(): The specified service does not exist as an installed service.
+nssm.exe : Can't open service!
+At C:\Games\street-retail-aggregator\install-services.ps1:20 char:1
++ & $nssm remove retail-backend confirm 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Can't open service!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+OpenService(): The specified service does not exist as an installed service.
+
+
+
+nssm.exe : Can't open service!
+At C:\Games\street-retail-aggregator\install-services.ps1:20 char:1
++ & $nssm remove retail-backend confirm 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Can't open service!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+OpenService(): The specified service does not exist as an installed service.
+=== STEP 4: Install retail-backend via NSSM ===
+Service "retail-backend" installed successfully!
+Set parameter "AppDirectory" for service "retail-backend".
+Set parameter "AppStdout" for service "retail-backend".
+Set parameter "AppStderr" for service "retail-backend".
+Set parameter "AppStopMethodSkip" for service "retail-backend".
+Reset parameter "AppExit" for service "retail-backend" to its default.
+Set parameter "Start" for service "retail-backend".
+Set parameter "Description" for service "retail-backend".
+=== STEP 5: Start services ===
+retail-backend: START: The operation completed successfully.
+=== STEP 6: Service status ===
+
+Status  Name           DisplayName
+------  ----           -----------
+Running cloudflared    Cloudflared agent
+Running retail-backend retail-backend
+
+
+**********************
+Windows PowerShell transcript end
+End time: 20260524122246
+**********************

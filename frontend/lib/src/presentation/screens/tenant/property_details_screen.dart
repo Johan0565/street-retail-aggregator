@@ -8,7 +8,6 @@ import '../../../services/application_service.dart';
 import '../../../services/favorite_service.dart';
 import '../../../services/analytics_service.dart';
 import '../../../services/image_helper.dart';
-import '../../../services/infrastructure_service.dart';
 import '../../../services/property_service.dart';
 
 /// Результат, который PropertyDetailsScreen возвращает MapScreen-у, когда
@@ -51,7 +50,6 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   bool _isFavorite = false;
   bool _isLoadingFavorite = false;
   bool _isCheckingInitialState = true;
-  Future<List<PoiDto>>? _poiFuture;
 
   final PageController _photoController = PageController();
   int _photoIndex = 0;
@@ -59,6 +57,15 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   // Скоринг, подгружаемый с бэкенда (когда scoredProperty не передан извне)
   ScoredProperty? _loadedScore;
   bool _isLoadingScore = false;
+
+  // Полная версия объекта, дозагруженная по id. Список картинок в карусели
+  // берём отсюда: список /api/properties может вернуть объект без images
+  // из-за обрезания/lazy-инициализации на бэке, а карточка должна показывать
+  // все фото и галерею.
+  Property? _fullProperty;
+
+  List<PropertyImage> get _carouselImages =>
+      _fullProperty?.images ?? widget.property.images;
 
   @override
   void initState() {
@@ -70,10 +77,13 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     } else {
       _isCheckingInitialState = false;
     }
-    _poiFuture = InfrastructureService().getInfrastructureNearby(
-      widget.property.latitude,
-      widget.property.longitude,
-    );
+    _fetchFullProperty();
+  }
+
+  Future<void> _fetchFullProperty() async {
+    final full = await PropertyService().getPropertyById(widget.property.id);
+    if (!mounted || full == null) return;
+    setState(() => _fullProperty = full);
   }
 
   Future<void> _loadScore() async {
@@ -469,13 +479,6 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     title: 'Описание',
                     child: Text(widget.property.description, style: const TextStyle(fontSize: 15, height: 1.5, color: Colors.black87)),
                   ),
-                  const SizedBox(height: 16),
-                  
-                  // 6. ИНФРАСТРУКТУРА
-                  _buildSectionCard(
-                    title: 'Что рядом',
-                    child: _buildInfrastructureSection(),
-                  ),
                 ],
               ),
             ),
@@ -521,7 +524,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   }
 
   Widget _buildPhotoHeader() {
-    final images = widget.property.images;
+    final images = _carouselImages;
     if (images.isEmpty) {
       return Container(
         color: Colors.grey[300],
@@ -836,85 +839,6 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     );
   }
 
-  Widget _buildInfrastructureSection() {
-    return FutureBuilder<List<PoiDto>>(
-      future: _poiFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return _Shimmer(
-            child: Column(
-              children: List.generate(5, (i) {
-                const nameWidths = [180.0, 220.0, 160.0, 200.0, 170.0];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Row(
-                    children: [
-                      const _SkeletonBox(
-                        width: 36,
-                        height: 36,
-                        shape: BoxShape.circle,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: _SkeletonBox(
-                            width: nameWidths[i],
-                            height: 13,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const _SkeletonBox(width: 42, height: 11),
-                    ],
-                  ),
-                );
-              }),
-            ),
-          );
-        }
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Text('Данные об инфраструктуре недоступны', style: TextStyle(color: Colors.grey));
-        }
-
-        final pois = snapshot.data!;
-        
-        return Column(
-          children: pois.take(5).map((poi) {
-            IconData icon = Icons.place;
-            Color iconColor = Colors.grey;
-            if (poi.category == 'metro') { icon = Icons.subway; iconColor = Colors.red; }
-            else if (poi.category == 'cafe') { icon = Icons.local_cafe; iconColor = Colors.brown; }
-            else if (poi.category == 'university') { icon = Icons.school; iconColor = Colors.blue; }
-            
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12.0),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: iconColor.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: iconColor, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(poi.name, style: const TextStyle(fontSize: 15)),
-                  ),
-                  Text(
-                    '${poi.distanceMeters.toInt()} м',
-                    style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        );
-      },
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -174,7 +174,12 @@ public class OverpassPlacesService {
      */
     private String buildQuery(double lat, double lon, int radiusMeters) {
         String around = "around:" + radiusMeters + "," + lat + "," + lon;
-        StringBuilder q = new StringBuilder("[out:json][timeout:25];(");
+        // timeout:15 — на серверной стороне ограничиваем выполнение запроса
+        // 15 секундами. Если Overpass под нагрузкой не успел — лучше быстро
+        // получить пустой ответ и отдать дефолтный балл, чем держать поток
+        // дольше: один stuck-запрос блокирует одну из 8 параллельных нитей
+        // и легко вытягивает общий батч за 120с фронтового таймаута.
+        StringBuilder q = new StringBuilder("[out:json][timeout:15];(");
 
         // shop=* — берём всё (теги магазинов уже коммерческие по определению)
         q.append("nwr[shop](").append(around).append(");");
@@ -230,7 +235,8 @@ public class OverpassPlacesService {
      */
     private String buildTransportQuery(double lat, double lon, int radiusMeters) {
         String around = "around:" + radiusMeters + "," + lat + "," + lon;
-        StringBuilder q = new StringBuilder("[out:json][timeout:25];(");
+        // timeout:15 — см. buildQuery: быстрее провалиться, чем держать поток.
+        StringBuilder q = new StringBuilder("[out:json][timeout:15];(");
         q.append("nwr[railway=station][name](").append(around).append(");");
         q.append("nwr[railway=subway_entrance][name](").append(around).append(");");
         q.append("nwr[railway=tram_stop](").append(around).append(");");

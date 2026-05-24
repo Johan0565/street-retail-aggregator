@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
 /**
@@ -105,16 +107,38 @@ public class PropertyScoringService {
     public List<ScoredPropertyDto> scoreAndRankProperties(SearchProfile profile, List<Property> properties) {
         List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
         Map<String, List<BusinessCategory>> tagIndex = buildTagIndex(allCategories);
-        return properties.stream()
-                .map(p -> scoreInternal(profile, p, tagIndex))
-                .sorted(Comparator.comparingInt(ScoredPropertyDto::getTotalScore).reversed())
-                .collect(Collectors.toList());
+
+        // Принудительно инициализируем lazy-ассоциации профиля до выхода
+        // в параллельный пул — параллельные треды могут не иметь Hibernate
+        // session-а от OSIV, что выльется в LazyInitializationException.
+        if (profile.getBusinessCategory() != null) profile.getBusinessCategory().getName();
+        if (profile.getDesiredNeighbors() != null) profile.getDesiredNeighbors().size();
+        properties.forEach(p -> { if (p.getImages() != null) p.getImages().size(); });
+
+        // Параллелим Overpass-вызовы между объектами. Без выделенного пула
+        // .parallelStream() забирает общий ForkJoinPool — нежелательно делить
+        // его с другими частями приложения. 8 потоков — компромисс между
+        // wall-clock временем и нагрузкой на Overpass: 20 помещений × 2
+        // Overpass-запроса при пуле 4 укладывалось в ~100с (рядом с фронтовым
+        // таймаутом и часто его превышало). С пулом 8 + внутрипропертийной
+        // параллелизацией (см. scoreInternal) суммарный батч укладывается
+        // в ~30–40с даже без прогретого кэша.
+        ForkJoinPool pool = new ForkJoinPool(8);
+        try {
+            return pool.submit(() -> properties.parallelStream()
+                    .map(p -> scoreInternal(profile, p, tagIndex, pool))
+                    .sorted(Comparator.comparingInt(ScoredPropertyDto::getTotalScore).reversed())
+                    .collect(Collectors.toList())
+            ).join();
+        } finally {
+            pool.shutdown();
+        }
     }
 
     public ScoredPropertyDto scorePropertyWithGis(SearchProfile profile, Property property) {
         List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
         Map<String, List<BusinessCategory>> tagIndex = buildTagIndex(allCategories);
-        return scoreInternal(profile, property, tagIndex);
+        return scoreInternal(profile, property, tagIndex, null);
     }
 
     // =========================================================================
@@ -122,11 +146,31 @@ public class PropertyScoringService {
     // =========================================================================
 
     private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
-                                             Map<String, List<BusinessCategory>> tagIndex) {
+                                             Map<String, List<BusinessCategory>> tagIndex,
+                                             ForkJoinPool ioPool) {
         FinancialResult financial = calculateFinancial(profile, property);
         TechnicalResult technical = calculateTechnical(profile, property);
-        NeighborhoodResult neighborhood = analyzeNeighborhood(profile, property, tagIndex);
-        TransportResult transport = calculateTransport(property);
+
+        // Соседство и транспорт делают независимые Overpass-запросы. Если
+        // вызывать их последовательно, каждое помещение ждёт t1+t2 (10–60с).
+        // В рамках батча уже есть параллелизм между помещениями, но внутри
+        // одного помещения два HTTP-запроса всё равно блокировали поток
+        // дважды. При наличии IO-пула гоняем их параллельно — это режет
+        // per-property wall-clock примерно вдвое и спасает фронт от 120с
+        // таймаута на батче в 20 помещений.
+        NeighborhoodResult neighborhood;
+        TransportResult transport;
+        if (ioPool != null) {
+            CompletableFuture<NeighborhoodResult> neighborhoodFut = CompletableFuture.supplyAsync(
+                    () -> analyzeNeighborhood(profile, property, tagIndex), ioPool);
+            CompletableFuture<TransportResult> transportFut = CompletableFuture.supplyAsync(
+                    () -> calculateTransport(property), ioPool);
+            neighborhood = neighborhoodFut.join();
+            transport = transportFut.join();
+        } else {
+            neighborhood = analyzeNeighborhood(profile, property, tagIndex);
+            transport = calculateTransport(property);
+        }
 
         int total = financial.score() + technical.score()
                   + neighborhood.competitorScore() + neighborhood.synergyScore()

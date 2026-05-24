@@ -18,6 +18,9 @@ public class RestClientConfig {
     public RestClient overpassRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5_000);
+        // Overpass под нагрузкой штатно отвечает 10–25с — обрезать его жёстче
+        // нельзя, иначе он возвращает пустые тела и скоринг выводит нули
+        // конкурентов/соседей.
         factory.setReadTimeout(30_000);
         return RestClient.builder()
                 .requestFactory(factory)

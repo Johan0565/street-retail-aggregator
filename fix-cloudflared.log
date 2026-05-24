@@ -1,0 +1,83 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260524124147
+Username: COMPUDACKTER\User
+RunAs User: COMPUDACKTER\User
+Configuration Name: 
+Machine: COMPUDACKTER (Microsoft Windows NT 10.0.26100.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Games\street-retail-aggregator\fix-cloudflared-service.ps1
+Process ID: 38172
+PSVersion: 5.1.26100.7462
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.7462
+BuildVersion: 10.0.26100.7462
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is C:\Games\street-retail-aggregator\fix-cloudflared.log
+Stopping Cloudflared service
+Setting ImagePath registry to: "C:\Program Files (x86)\cloudflared\cloudflared.exe" --config "C:\Users\User\.cloudflared\config.yml" --no-autoupdate tunnel run retail-demo
+Verifying registry:
+"C:\Program Files (x86)\cloudflared\cloudflared.exe" --config "C:\Users\User\.cloudflared\config.yml" --no-autoupdate tunnel run retail-demo
+Starting Cloudflared service
+Service status:
+
+
+Name      : Cloudflared
+Status    : Running
+StartType : Automatic
+
+
+
+Recent event log entries (newest 10):
+
+
+TimeGenerated : 24/05/2026 12:41:49 PM
+EntryType     : Information
+Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe --config
+                C:\Users\User\.cloudflared\config.yml --no-autoupdate tunnel run retail-demo]
+
+TimeGenerated : 24/05/2026 12:41:49 PM
+EntryType     : Information
+Msg           : Cloudflared service starting
+
+TimeGenerated : 24/05/2026 12:41:48 PM
+EntryType     : Information
+Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
+
+TimeGenerated : 24/05/2026 12:41:48 PM
+EntryType     : Information
+Msg           : Cloudflared service starting
+
+TimeGenerated : 24/05/2026 12:41:39 PM
+EntryType     : Information
+Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
+
+TimeGenerated : 24/05/2026 12:41:39 PM
+EntryType     : Information
+Msg           : Cloudflared service starting
+
+TimeGenerated : 24/05/2026 12:41:28 PM
+EntryType     : Information
+Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
+
+TimeGenerated : 24/05/2026 12:41:28 PM
+EntryType     : Information
+Msg           : Cloudflared service starting
+
+TimeGenerated : 24/05/2026 12:41:19 PM
+EntryType     : Information
+Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
+
+TimeGenerated : 24/05/2026 12:41:19 PM
+EntryType     : Information
+Msg           : Cloudflared service starting
+
+
+
+**********************
+Windows PowerShell transcript end
+End time: 20260524124200
+**********************
