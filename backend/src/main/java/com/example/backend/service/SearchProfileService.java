@@ -26,7 +26,7 @@ public class SearchProfileService {
     private final UserRepository userRepository;
     private final BusinessCategoryRepository businessCategoryRepository;
     private final PropertyRepository propertyRepository;
-    private final PropertyScoringService propertyScoringService;
+    private final PropertyScoreSnapshotService propertyScoreSnapshotService;
 
     /**
      * Создать новый проект поиска.
@@ -74,7 +74,12 @@ public class SearchProfileService {
         profile.setSynergyRadiusMeters(request.getSynergyRadiusMeters());
         profile.setDesiredNeighbors(resolveCategories(request.getDesiredNeighborCategoryIds()));
 
-        return searchProfileRepository.save(profile);
+        SearchProfile saved = searchProfileRepository.save(profile);
+        // Критерии профиля изменились — все сохранённые оценки под него
+        // устарели. Инвалидируем, чтобы при следующем открытии списка
+        // арендатор увидел оценки под новые критерии.
+        propertyScoreSnapshotService.invalidateByProfile(profileId);
+        return saved;
     }
 
     /**
@@ -99,6 +104,8 @@ public class SearchProfileService {
     @Transactional
     public void deleteSearchProfile(Long tenantId, Long profileId) {
         SearchProfile profile = getProfileOwnedByTenant(tenantId, profileId);
+        // Сначала чистим snapshot'ы (без CASCADE на FK), потом сам профиль.
+        propertyScoreSnapshotService.invalidateByProfile(profileId);
         searchProfileRepository.delete(profile);
     }
 
@@ -106,15 +113,13 @@ public class SearchProfileService {
      * ⭐ Ключевой метод: получить все опубликованные помещения со скорингом
      * по конкретному профилю поиска, отсортированных по убыванию балла.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ScoredPropertyDto> getScoredPropertiesForProfile(Long tenantId, Long profileId) {
         SearchProfile profile = getProfileOwnedByTenant(tenantId, profileId);
-
-        // Загружаем все опубликованные помещения
         var allPublished = propertyRepository.findByStatus(PropertyStatus.PUBLISHED);
-
-        // Оцениваем и сортируем
-        return propertyScoringService.scoreAndRankProperties(profile, allPublished);
+        // Через snapshot-кэш: первое открытие считает + сохраняет, повторное
+        // открытие возвращает из БД за миллисекунды.
+        return propertyScoreSnapshotService.scoreBatchWithSnapshot(profile, allPublished, false);
     }
 
     // -------------------------------------------------------------------------

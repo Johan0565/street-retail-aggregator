@@ -274,12 +274,17 @@ class PropertyService {
   }
   /// Запрашивает скоринг конкретного помещения. Если передан [profileId] —
   /// скоринг строится под этот проект; иначе бэкенд возьмёт первый активный.
-  Future<ScoredProperty?> scoreProperty(int propertyId, {int? profileId}) async {
+  /// [force]=true заставляет бэкенд проигнорировать snapshot-кэш и
+  /// пересчитать всё заново (для кнопки «обновить оценку»).
+  Future<ScoredProperty?> scoreProperty(int propertyId, {int? profileId, bool force = false}) async {
     try {
       final token = await _storage.read(key: 'jwt_token');
+      final query = <String, dynamic>{};
+      if (profileId != null) query['profileId'] = profileId;
+      if (force) query['force'] = true;
       final response = await _dio.get(
         '/properties/$propertyId/score',
-        queryParameters: profileId != null ? {'profileId': profileId} : null,
+        queryParameters: query.isEmpty ? null : query,
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       if (response.statusCode == 200 && response.data != null) {

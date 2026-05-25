@@ -86,15 +86,24 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
     setState(() => _fullProperty = full);
   }
 
-  Future<void> _loadScore() async {
+  Future<void> _loadScore({bool force = false}) async {
     setState(() => _isLoadingScore = true);
     final score = await PropertyService()
-        .scoreProperty(widget.property.id, profileId: widget.profileId);
+        .scoreProperty(widget.property.id, profileId: widget.profileId, force: force);
     if (!mounted) return;
     setState(() {
       _loadedScore = score;
       _isLoadingScore = false;
     });
+    // Если бэкенд сказал, что данные Overpass недоступны — даём пользователю
+    // явный сигнал, чтобы он не подумал, что 30/40 это «реально».
+    if (score != null && score.isPartial) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('⚠️ Данные о соседях временно недоступны — оценка частичная'),
+        backgroundColor: Color(0xFF94A3B8),
+        duration: Duration(seconds: 3),
+      ));
+    }
   }
 
   /// Закрывает модальную шторку и сам экран деталей, возвращая координаты
@@ -162,19 +171,64 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             children: [
               Icon(Icons.auto_awesome_rounded, color: scored.flutterColor, size: 18),
               const SizedBox(width: 8),
-              Text(
-                '${scored.totalScore}% — ${scored.matchLabel}',
-                style: TextStyle(color: scored.flutterColor, fontWeight: FontWeight.bold, fontSize: 15),
+              Expanded(
+                child: Text(
+                  '${scored.totalScore}% — ${scored.matchLabel}',
+                  style: TextStyle(color: scored.flutterColor, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+              // «Обновить оценку» — игнорирует snapshot-кэш на бэке, заставляет
+              // пересчитать с нуля (Overpass + полный пересчёт формул).
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _loadScore(force: true),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.refresh_rounded, size: 18, color: scored.flutterColor),
+                ),
               ),
             ],
           ),
+          if (scored.computedAt != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'оценено ${_formatRelative(scored.computedAt!)}',
+              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+            ),
+          ],
           const SizedBox(height: 12),
+          if (scored.isPartial) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF94A3B8).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF94A3B8).withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.cloud_off_rounded, size: 16, color: Color(0xFF64748B)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Данные о соседях и транспорте временно недоступны. '
+                      'Балл учитывает только финансовые и технические критерии.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           _scoreBar('Финансовый', scored.financialScore, 20),
           _scoreBar('Технический', scored.technicalScore, 20),
-          _scoreBar('Конкуренты', scored.competitorScore, 40),
-          _scoreBar('Синергия', scored.synergyScore, 15),
-          _scoreBar('Транспорт', scored.transportScore, 5),
-          if (scored.breakdown?.transport != null) ...[
+          if (!scored.isPartial) ...[
+            _scoreBar('Конкуренты', scored.competitorScore, 40),
+            _scoreBar('Синергия', scored.synergyScore, 15),
+            _scoreBar('Транспорт', scored.transportScore, 5),
+          ],
+          if (!scored.isPartial && scored.breakdown?.transport != null) ...[
             const SizedBox(height: 4),
             Text(
               '5 баллов отведены на доступ к общественному транспорту: '
@@ -185,6 +239,17 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
         ],
       ),
     );
+  }
+
+  /// «5 минут назад», «2 часа назад», «вчера» — относительное время для
+  /// computedAt, чтобы пользователь видел свежесть оценки.
+  String _formatRelative(DateTime when) {
+    final diff = DateTime.now().difference(when);
+    if (diff.inSeconds < 60) return 'только что';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} мин назад';
+    if (diff.inHours < 24) return '${diff.inHours} ч назад';
+    if (diff.inDays < 7) return '${diff.inDays} д назад';
+    return '${when.day.toString().padLeft(2, '0')}.${when.month.toString().padLeft(2, '0')}';
   }
 
   Widget _buildScoringLoadingCard() {

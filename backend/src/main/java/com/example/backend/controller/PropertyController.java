@@ -45,9 +45,10 @@ public class PropertyController {
     public ResponseEntity<ScoredPropertyDto> getPropertyScore(
             @PathVariable Long id,
             @RequestParam(value = "profileId", required = false) Long profileId,
+            @RequestParam(value = "force", required = false, defaultValue = "false") boolean force,
             Principal principal) {
         Long tenantId = extractUserIdFromPrincipal(principal);
-        ScoredPropertyDto score = propertyService.scorePropertyForTenant(tenantId, id, profileId);
+        ScoredPropertyDto score = propertyService.scorePropertyForTenant(tenantId, id, profileId, force);
         if (score == null) {
             return ResponseEntity.noContent().build();
         }

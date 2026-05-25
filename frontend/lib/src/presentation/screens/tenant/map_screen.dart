@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import '../../../domain/property.dart';
 import '../../../domain/property_filter.dart';
 import '../../../domain/search_profile.dart';
+import '../../../services/analytics_service.dart';
 import '../../../services/property_service.dart';
 import '../../../services/search_profile_service.dart';
 import 'property_details_screen.dart';
@@ -33,6 +34,10 @@ class MapScreenState extends State<MapScreen> {
   Map<int, ScoredProperty> _scoreCache = {};
   List<Property> _allProperties = [];
   PropertyFilter _activeFilter = PropertyFilter.empty;
+
+  // Локальный набор уже просмотренных арендатором помещений — для затемнения
+  // их меток на карте серовато-оранжевым цветом.
+  Set<int> _viewedPropertyIds = <int>{};
 
   // Поиск адреса
   final TextEditingController _searchController = TextEditingController();
@@ -6679,6 +6684,25 @@ class MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _loadProfilesThenProperties();
+    _loadViewedProperties();
+  }
+
+  Future<void> _loadViewedProperties() async {
+    final ids = await ViewedPropertiesStore.instance.load();
+    if (!mounted) return;
+    setState(() => _viewedPropertyIds = ids.toSet());
+    // Если метки уже отрисованы — перекрасить просмотренные.
+    if (_allProperties.isNotEmpty) {
+      await _rebuildMarkersFromCache();
+    }
+  }
+
+  Future<void> _markPropertyViewed(int propertyId) async {
+    if (_viewedPropertyIds.contains(propertyId)) return;
+    setState(() => _viewedPropertyIds.add(propertyId));
+    if (_allProperties.isNotEmpty) {
+      await _rebuildMarkersFromCache();
+    }
   }
 
   Future<void> _loadProfilesThenProperties() async {
@@ -6867,10 +6891,12 @@ class MapScreenState extends State<MapScreen> {
 
     final List<Future<PlacemarkMapObject>> markerFutures = properties.map((property) async {
       final scored = _scoreCache[property.id];
-      final markerColor = scored != null ? scored.flutterColor : _primaryOrange;
+      final baseColor = scored != null ? scored.flutterColor : _primaryOrange;
+      final isViewed = _viewedPropertyIds.contains(property.id);
+      final markerColor = isViewed ? _desaturateForViewed(baseColor) : baseColor;
       final score = scored?.totalScore;
 
-      final cacheKey = '${markerColor.toARGB32()}_$score';
+      final cacheKey = '${markerColor.toARGB32()}_${score}_$isViewed';
       Uint8List? iconBytes = iconCache[cacheKey];
       if (iconBytes == null) {
         iconBytes = await _buildMarkerIcon(markerColor, score);
@@ -6917,6 +6943,18 @@ class MapScreenState extends State<MapScreen> {
     );
 
     if (mounted) setState(() => mapObjects = [clusterizedCollection]);
+  }
+
+  // Слегка серовато-оранжевый оттенок для меток уже просмотренных помещений:
+  // снижаем насыщенность и чуть осветляем, чтобы непросмотренные были заметнее.
+  Color _desaturateForViewed(Color base) {
+    final hsl = HSLColor.fromColor(base);
+    final newSaturation = (hsl.saturation * 0.35).clamp(0.0, 1.0);
+    final newLightness = (hsl.lightness * 0.85 + 0.15).clamp(0.0, 1.0);
+    return hsl
+        .withSaturation(newSaturation)
+        .withLightness(newLightness)
+        .toColor();
   }
 
   // Генерация цветного маркера с баллом скоринга
@@ -7080,6 +7118,10 @@ class MapScreenState extends State<MapScreen> {
                     if (result is PropertyDetailsFocusResult) {
                       _focusCameraOn(result.latitude, result.longitude);
                     }
+                    // Помещение могли только что открыть в деталях — пометим его
+                    // как просмотренное и обновим маркеры карты, чтобы метка стала
+                    // серовато-оранжевой.
+                    await _markPropertyViewed(property.id);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,

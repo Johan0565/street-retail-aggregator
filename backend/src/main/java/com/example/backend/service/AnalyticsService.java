@@ -18,8 +18,12 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -73,11 +77,11 @@ public class AnalyticsService {
     public AnalyticsDto getLandlordAnalytics(Long landlordId) {
         LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
 
-        List<PropertyViewEvent> recentViews = propertyViewEventRepository
+        List<PropertyViewEvent> recentViews = dedupeViewsByViewer(propertyViewEventRepository
                 .findByPropertyLandlordIdAndViewTimestampAfter(landlordId, thirtyDaysAgo)
                 .stream()
                 .filter(e -> isNotArchived(e.getProperty()))
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
 
         List<FavoriteEvent> recentFavorites = favoriteEventRepository
                 .findByPropertyLandlordIdAndCreatedAtAfter(landlordId, thirtyDaysAgo)
@@ -124,8 +128,8 @@ public class AnalyticsService {
 
         LocalDateTime thirtyDaysAgo = LocalDateTime.now().minusDays(30);
 
-        List<PropertyViewEvent> views = propertyViewEventRepository
-                .findByPropertyIdAndViewTimestampAfter(propertyId, thirtyDaysAgo);
+        List<PropertyViewEvent> views = dedupeViewsByViewer(propertyViewEventRepository
+                .findByPropertyIdAndViewTimestampAfter(propertyId, thirtyDaysAgo));
         List<FavoriteEvent> favorites = favoriteEventRepository
                 .findByPropertyIdAndCreatedAtAfter(propertyId, thirtyDaysAgo);
         List<Application> recentApps = applicationRepository
@@ -154,6 +158,35 @@ public class AnalyticsService {
 
     private boolean isNotArchived(Property property) {
         return property != null && property.getStatus() != PropertyStatus.ARCHIVED;
+    }
+
+    /**
+     * Оставляет только первый просмотр на каждую пару (помещение, авторизованный
+     * пользователь): повторные открытия одной и той же карточки одним и тем же
+     * пользователем не должны разгонять счётчик в аналитике лендлорда.
+     * Анонимные события (viewer == null) считаются как отдельные просмотры —
+     * у нас нет способа их сгруппировать.
+     */
+    private List<PropertyViewEvent> dedupeViewsByViewer(List<PropertyViewEvent> events) {
+        List<PropertyViewEvent> sorted = events.stream()
+                .sorted(Comparator.comparing(
+                        PropertyViewEvent::getViewTimestamp,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+        Set<String> seenPairs = new HashSet<>();
+        List<PropertyViewEvent> result = new ArrayList<>(sorted.size());
+        for (PropertyViewEvent e : sorted) {
+            if (e.getProperty() == null) continue;
+            if (e.getViewer() == null) {
+                result.add(e);
+                continue;
+            }
+            String key = e.getProperty().getId() + ":" + e.getViewer().getId();
+            if (seenPairs.add(key)) {
+                result.add(e);
+            }
+        }
+        return result;
     }
 
     private Map<String, Long> groupViewsByDate(List<PropertyViewEvent> events) {

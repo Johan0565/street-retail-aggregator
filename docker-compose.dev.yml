@@ -1,10 +1,13 @@
 # Overlay для локальной разработки.
 # Использование:
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d overpass
 #
 # Что делает:
 #   - пробрасывает порт БД 5434 -> 5432, чтобы Spring Boot мог подключаться с хоста
 #     (как было в application.properties: jdbc:postgresql://localhost:5434/...)
+#   - поднимает локальный Overpass API на http://localhost:12345/api/interpreter
+#     (база OSM PBF лежит на D:\overpass_db, ~40 ГБ; первый запуск 20-30 мин)
 #   - не запускает nginx/certbot (для разработки они не нужны)
 
 services:
@@ -20,3 +23,42 @@ services:
 
   certbot:
     profiles: ["never"]
+
+  # Локальный Overpass API. Снимает зависимость от публичных mirror'ов
+  # overpass-api.de / kumi.systems / private.coffee — они часто отвечают 5xx
+  # или таймаутят, что портит скоринг (см. OverpassPlacesService).
+  # База кладётся на D:\overpass_db, чтобы не съесть системный диск.
+  overpass:
+    image: wiktorn/overpass-api
+    container_name: overpass_local
+    restart: always
+    ports:
+      - "12345:80"
+    volumes:
+      # Bind-mount на D: (явный абсолютный путь — Docker Desktop на Windows
+      # требует, чтобы диск был расшарен в Settings → Resources → File sharing).
+      - D:\overpass_db:/db
+    environment:
+      # PBF Центрального ФО (~600 МБ). Geofabrik для большинства суб-регионов
+      # уже не отдаёт .osm.bz2, только PBF — поэтому конвертируем on-the-fly.
+      OVERPASS_PLANET_URL: "http://download.geofabrik.de/russia/central-fed-district-latest.osm.pbf"
+      # Entrypoint всегда сохраняет файл как /db/planet.osm.bz2, но фактически
+      # внутри будет PBF. Убегаем от паттерна mv-then-read (на Docker Desktop
+      # Windows bind-mount это даёт «No such file» после успешного mv —
+      # видимо, проблема с sync 9P/virtiofs). Читаем напрямую с --input-format,
+      # пишем в tmp, потом атомарно ренеймим — между mv и init_osm3s.sh
+      # запускается новый процесс, кэш не мешает.
+      OVERPASS_PLANET_PREPROCESS: "osmium cat /db/planet.osm.bz2 --input-format=osm.pbf -o /db/planet.tmp.bz2 --output-format=osm.bz2 --overwrite && mv -f /db/planet.tmp.bz2 /db/planet.osm.bz2"
+      # Серверный таймаут на запрос (сек).
+      OVERPASS_MAX_TIMEOUT: "1000"
+      # init — импорт при первом запуске; потом entrypoint сам переключится
+      # в режим обслуживания запросов dispatcher'ом.
+      OVERPASS_MODE: init
+      # yes — пишем мета-инфу (timestamp, user); нужно для большинства
+      # клиентов и для apply diffs.
+      OVERPASS_META: "yes"
+      # no — отключаем тяжёлую переиндексацию областей, которая длится
+      # часами и нам в скоринге не нужна (мы используем around:, не area:).
+      OVERPASS_USE_AREAS: "no"
+    networks:
+      - retail_net

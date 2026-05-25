@@ -136,20 +136,35 @@ class SearchProfile {
       };
 }
 
+/// Статус источников данных для скоринга. OVERPASS_UNAVAILABLE означает,
+/// что все mirror'ы Overpass упали и компоненты конкурентов/синергии/
+/// транспорта НЕ посчитаны (раньше при сбое выставлялся max 40/40, и плохой
+/// адрес мог стать «🔥 Отличный мэтч»). Фронт показывает предупреждение и
+/// предлагает кнопку «обновить».
+enum ScoringDataStatus { complete, overpassUnavailable }
+
 /// Dart-модель помещения с результатом скоринга.
 class ScoredProperty {
   final Property property;
-  final int totalScore;       // 0-100
-  final int financialScore;   // 0-20 (площадь + бюджет, асимметричный smooth decay)
-  final int technicalScore;   // 0-20 (тех. требования, градиент + null-discount)
-  final int competitorScore;  // 0-40 (конкуренты, distance-weighted exp decay)
-  final int synergyScore;     // 0-15 (синергия с желаемыми соседями, distance-aware)
-  final int transportScore;   // 0-5  (близость общественного транспорта)
+  final int totalScore;       // 0-100 (или 0-40 при overpassUnavailable)
+  final int financialScore;   // 0-20
+  final int technicalScore;   // 0-20
+  final int competitorScore;  // 0-40
+  final int synergyScore;     // 0-15
+  final int transportScore;   // 0-5
   final List<String> directCompetitorNames;
   final List<String> synergyNeighborNames;
   final String matchLabel;
-  final String matchColor;    // "green", "yellow", "red"
+  final String matchColor;    // "green", "yellow", "red", "gray"
   final ScoreBreakdown? breakdown;
+  /// Статус данных. При overpassUnavailable totalScore посчитан только по
+  /// финансам+технике, остальные компоненты обнулены.
+  final ScoringDataStatus dataStatus;
+  /// Когда оценка была посчитана на бэкенде. null для legacy-ответов.
+  /// Используется для UI «оценено N минут назад / обновить».
+  final DateTime? computedAt;
+  /// Версия алгоритма скоринга — для отладки и проверки актуальности.
+  final String? algorithmVersion;
 
   const ScoredProperty({
     required this.property,
@@ -164,12 +179,26 @@ class ScoredProperty {
     this.directCompetitorNames = const [],
     this.synergyNeighborNames = const [],
     this.breakdown,
+    this.dataStatus = ScoringDataStatus.complete,
+    this.computedAt,
+    this.algorithmVersion,
   });
 
   factory ScoredProperty.fromJson(Map<String, dynamic> json) {
     List<String> parseStringList(dynamic v) => v is List
         ? v.map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
         : const [];
+
+    final statusRaw = json['dataStatus']?.toString();
+    final status = statusRaw == 'OVERPASS_UNAVAILABLE'
+        ? ScoringDataStatus.overpassUnavailable
+        : ScoringDataStatus.complete;
+
+    DateTime? parsedAt;
+    final atRaw = json['computedAt'];
+    if (atRaw is String && atRaw.isNotEmpty) {
+      parsedAt = DateTime.tryParse(atRaw);
+    }
 
     return ScoredProperty(
       property: Property.fromJson(json['property'] as Map<String, dynamic>),
@@ -186,8 +215,13 @@ class ScoredProperty {
       breakdown: json['breakdown'] is Map<String, dynamic>
           ? ScoreBreakdown.fromJson(json['breakdown'] as Map<String, dynamic>)
           : null,
+      dataStatus: status,
+      computedAt: parsedAt,
+      algorithmVersion: json['algorithmVersion']?.toString(),
     );
   }
+
+  bool get isPartial => dataStatus == ScoringDataStatus.overpassUnavailable;
 
   /// Flutter Color по строковому значению matchColor из бэкенда
   Color get flutterColor {
@@ -196,6 +230,8 @@ class ScoredProperty {
         return const Color(0xFF22C55E);
       case 'yellow':
         return const Color(0xFFF59E0B);
+      case 'gray':
+        return const Color(0xFF94A3B8);
       default:
         return const Color(0xFFEF4444);
     }
@@ -203,6 +239,7 @@ class ScoredProperty {
 
   /// Иконка для маркера на карте
   String get markerEmoji {
+    if (isPartial) return '⚠️';
     if (totalScore >= 75) return '🔥';
     if (totalScore >= 50) return '👍';
     if (totalScore >= 25) return '⚠️';

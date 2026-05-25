@@ -23,31 +23,29 @@ public class PropertyService {
     private final BusinessCategoryRepository businessCategoryRepository;
     private final SearchProfileRepository searchProfileRepository;
     private final PropertyScoringService propertyScoringService;
+    private final PropertyScoreSnapshotService propertyScoreSnapshotService;
     private final AnalyticsService analyticsService;
 
     /**
      * Получить рекомендованные помещения для арендатора.
-     * Если у арендатора есть активный проект поиска — использует скоринг.
-     * Если нет — возвращает все опубликованные без скоринга.
+     * Если у арендатора есть активный проект поиска — использует скоринг
+     * с snapshot-кэшем (повторное открытие списка не бьёт по Overpass).
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<Property> getRecommendedPropertiesForTenant(Long tenantUserId) {
         List<Property> allPublished = propertyRepository.findByStatus(PropertyStatus.PUBLISHED);
 
-        // Ищем активный проект поиска
         var activeProfiles = searchProfileRepository.findByTenantIdAndIsActiveTrue(tenantUserId);
 
         if (!activeProfiles.isEmpty()) {
-            // Используем первый активный профиль для скоринга
             SearchProfile activeProfile = activeProfiles.get(0);
-            return propertyScoringService
-                    .scoreAndRankProperties(activeProfile, allPublished)
+            return propertyScoreSnapshotService
+                    .scoreBatchWithSnapshot(activeProfile, allPublished, false)
                     .stream()
                     .map(ScoredPropertyDto::getProperty)
                     .collect(Collectors.toList());
         }
 
-        // Нет активного профиля — возвращаем без скоринга
         return allPublished;
     }
 
@@ -56,6 +54,7 @@ public class PropertyService {
         return propertyRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
     }
+
     @Transactional
     public Property createProperty(Long landlordId, CreatePropertyRequest request) {
         User landlord = userRepository.findById(landlordId)
@@ -77,7 +76,6 @@ public class PropertyService {
                 .longitude(request.getLongitude())
                 .areaSqm(request.getAreaSqm())
                 .pricePerMonth(request.getPricePerMonth())
-                // Маппинг новых полей
                 .propertyType(request.getPropertyType())
                 .dealType(request.getDealType())
                 .buildingName(request.getBuildingName())
@@ -122,7 +120,8 @@ public class PropertyService {
 
 
     /**
-     * Обновить объявление
+     * Обновить объявление. Инвалидируем кэш скоринга для этого помещения,
+     * чтобы арендатор сразу увидел оценку под новые характеристики.
      */
     @Transactional
     public Property updateProperty(Long landlordId, Long propertyId, CreatePropertyRequest request) {
@@ -133,17 +132,18 @@ public class PropertyService {
             throw new RuntimeException("Нет прав на редактирование чужого объекта");
         }
 
-        // Обновляем базовые поля
         property.setTitle(request.getTitle());
         property.setDescription(request.getDescription());
         property.setPricePerMonth(request.getPricePerMonth());
-        // ... (здесь можно добавить обновление остальных полей по аналогии) ...
 
-        return propertyRepository.save(property);
+        Property saved = propertyRepository.save(property);
+        propertyScoreSnapshotService.invalidateByProperty(propertyId);
+        return saved;
     }
 
     /**
-     * Архивация (Удаление) объявления
+     * Архивация объявления. Snapshot'ы тоже чистим — архивный объект
+     * не должен болтаться в кэше скоринга.
      */
     @Transactional
     public void deleteProperty(Long landlordId, Long propertyId) {
@@ -154,10 +154,9 @@ public class PropertyService {
             throw new RuntimeException("Нет прав на удаление чужого объекта");
         }
 
-        // В реальных системах данные не удаляют физически (repository.delete(property)),
-        // а меняют статус на "В архиве", чтобы не сломать историю заявок.
         property.setStatus(PropertyStatus.ARCHIVED);
         propertyRepository.save(property);
+        propertyScoreSnapshotService.invalidateByProperty(propertyId);
     }
     @Transactional
     public void addFavorite(Long tenantId, Long propertyId) {
@@ -195,29 +194,31 @@ public class PropertyService {
     }
 
     /**
-     * Рассчитать скоринг конкретного помещения для арендатора с использованием
-     * реальных данных 2GIS. Возвращает null, если у арендатора нет ни одного
-     * подходящего профиля поиска.
+     * Рассчитать скоринг конкретного помещения для арендатора. Под капотом
+     * — snapshot-кэш: если оценка свежая, возвращается мгновенно из БД,
+     * иначе пересчитывается и сохраняется.
      *
-     * @param profileId если задан — используется именно этот проект (с проверкой
-     *                  принадлежности арендатору); иначе берётся первый активный.
+     * @param profileId если задан — используется именно этот проект
+     * @param force если true — игнорировать snapshot и форсировать пересчёт
+     *              (для кнопки «обновить оценку»)
      */
-    @Transactional(readOnly = true)
-    public ScoredPropertyDto scorePropertyForTenant(Long tenantId, Long propertyId, Long profileId) {
+    @Transactional
+    public ScoredPropertyDto scorePropertyForTenant(Long tenantId, Long propertyId, Long profileId, boolean force) {
         SearchProfile profile = resolveProfile(tenantId, profileId);
         if (profile == null) return null;
 
         Property property = propertyRepository.findById(propertyId)
                 .orElseThrow(() -> new RuntimeException("Помещение не найдено"));
 
-        return propertyScoringService.scorePropertyWithGis(profile, property);
+        return propertyScoreSnapshotService.scoreWithSnapshot(profile, property, force);
     }
 
-    /**
-     * Возвращает проект арендатора, под который надо строить отчёт.
-     * Если передан конкретный {@code profileId} — берём именно его (с проверкой
-     * прав); иначе — первый из активных (старый дефолт, для обратной совместимости).
-     */
+    /** Совместимость со старыми вызовами без force-параметра. */
+    @Transactional
+    public ScoredPropertyDto scorePropertyForTenant(Long tenantId, Long propertyId, Long profileId) {
+        return scorePropertyForTenant(tenantId, propertyId, profileId, false);
+    }
+
     @Transactional(readOnly = true)
     public SearchProfile findProfileForTenant(Long tenantId, Long profileId) {
         return resolveProfile(tenantId, profileId);
@@ -233,13 +234,9 @@ public class PropertyService {
         return profiles.isEmpty() ? null : profiles.get(0);
     }
 
-    /**
-     * Получить все опубликованные помещения (общая лента)
-     */
     @Transactional(readOnly = true)
     public List<Property> getMyProperties(Long landlordId) {
         return propertyRepository.findByLandlordId(landlordId).stream()
-                // ОТФИЛЬТРОВЫВАЕМ АРХИВНЫЕ (УДАЛЕННЫЕ) ПОМЕЩЕНИЯ
                 .filter(property -> property.getStatus() != PropertyStatus.ARCHIVED)
                 .collect(Collectors.toList());
     }

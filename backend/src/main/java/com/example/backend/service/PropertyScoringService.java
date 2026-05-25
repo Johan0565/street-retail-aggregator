@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
@@ -29,19 +28,28 @@ import java.util.stream.Collectors;
  *   Транспорт         0–5   — близость общественного транспорта (метро ценнее
  *                              автобуса), distance-weighted exp decay
  *
- * Источник данных о соседях — OpenStreetMap через Overpass API.
- * Один запрос на помещение возвращает ВСЕ организации в радиусе с их
- * OSM-тегами. Категория сматчена с организацией, если хотя бы один её
- * "key=value"-тег ({@link BusinessCategory#getOsmTags()}) совпадает с
- * тегами организации. Этим решена ключевая проблема предыдущих
- * Yandex/2GIS-вариантов: прямой конкурент той же категории (аптека рядом
- * с целевой аптекой) больше не теряется в выдаче — Overpass отдаёт все
- * POI без лимитов на «релевантность».
+ * Источник данных о соседях — OpenStreetMap через Overpass API, один
+ * объединённый запрос на помещение возвращает и POI, и транспортные узлы
+ * (раньше делалось двумя независимыми вызовами).
+ *
+ * <b>Важное изменение:</b> при FAILED-статусе Overpass-ответа (все mirror'ы
+ * упали) НЕ выставляется max-балл «нет конкурентов = 40/40». Вместо этого
+ * dataStatus = OVERPASS_UNAVAILABLE, totalScore считается только по
+ * финансам+технике, фронт показывает «частичная оценка». Это устраняет
+ * ложно-положительные оценки при сбое API.
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class PropertyScoringService {
+
+    /**
+     * Версия алгоритма скоринга. ОБЯЗАТЕЛЬНО инкрементить при изменении
+     * любой формулы или константы ниже — это инвалидирует все сохранённые
+     * snapshot'ы в БД и форсирует их пересчёт. Без этого после деплоя
+     * пользователи продолжат видеть оценки, посчитанные по старой формуле.
+     */
+    public static final String ALGORITHM_VERSION = "v2.0";
 
     private final OverpassPlacesService overpassPlacesService;
     private final BusinessCategoryRepository businessCategoryRepository;
@@ -53,8 +61,6 @@ public class PropertyScoringService {
     private static final int MAX_TRANSPORT_SCORE   = 5;
 
     // --- Транспорт: характерная пешеходная дистанция ---
-    // σ_transport = 500м. Метро в 0м → 5; в 250м → 3.0; в 500м → 1.8; в 1км → 0.7.
-    // Для автобуса дистанция умножается на 2.0 (см. TransportType.distancePenalty).
     private static final double TRANSPORT_SIGMA_METERS = 500.0;
     // Радиус поиска транспорта фиксирован: бизнес-радиус арендатора может быть
     // мал (например 300м), а ближайшая станция — в 800м. Для UX важнее знать
@@ -64,40 +70,21 @@ public class PropertyScoringService {
     // --- Финансовый блок: half / half между бюджетом и площадью ---
     private static final double BUDGET_AXIS_MAX = 10.0;
     private static final double AREA_AXIS_MAX   = 10.0;
-    // Жёсткость спада, когда цена превышает бюджет. +20% → ~5.5, +50% → ~2.2.
     private static final double BUDGET_OVER_DECAY = 3.0;
-    // Площадь ниже минимума — жёсткий decay (бизнес может не влезть).
     private static final double AREA_UNDER_DECAY  = 4.0;
-    // Площадь выше максимума — мягкий decay (платят за лишние м², но рабочее).
     private static final double AREA_OVER_DECAY   = 1.5;
 
-    // --- Технический блок: половинный штраф при «неизвестно» ---
+    // --- Технический блок ---
     private static final double UNKNOWN_FIELD_PENALTY_FACTOR = 0.5;
-    // Полностью «провалить» по потолкам должно при дефиците ≥ этой величины (м).
     private static final double CEILING_FULL_PENALTY_DEFICIT_M = 0.3;
 
     // --- Параметры алгоритма distance-aware скоринга соседей ---
-    // Характерная дистанция decay'a берётся как radius / SIGMA_DIVISOR. При
-    // радиусе 1000м σ≈333м, и конкурент за 1км даёт вес exp(-3)≈0.05. То есть
-    // далёкие POI почти не влияют, ближние влияют сильно — устраняем главный
-    // дефект прежней step-функции «5+ direct = 0» в плотных районах вроде Мск.
     private static final double DISTANCE_SIGMA_DIVISOR = 3.0;
-    // Жёсткость экспоненциального спада итогового балла конкурентов.
-    // Калибровка: один близкий direct (вес≈0.86) → score≈12.8 (≈ прежние 12).
     private static final double COMPETITOR_DECAY_K_DIRECT   = 1.0;
-    // Если Overpass не отдал координаты конкретного POI — используем «средний»
-    // вес, чтобы он всё-таки участвовал в формуле, но не доминировал.
     private static final double FALLBACK_WEIGHT_MISSING_COORDS = 0.2;
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
     // --- Синергия: насыщающаяся сумма весов на категорию ---
-    // per_category = 1 - exp(-Σweight_i / K). Прежний вариант «брать только
-    // ближайшего» приводил к 6/15 при 200+ соседях в 2 категориях, потому что
-    // одиночный сосед в ~300м даёт weight≈0.4, и 0.4*15=6. Теперь любое скопление
-    // соседей в категории насыщает её вклад до 1.0.
-    // Калибровка K=0.7: один сосед «у двери» (weight=1) → 0.76, два по weight=0.5
-    // (Σ=1) → 0.76, пять в 300м (Σ≈2) → 0.94. Большая «масса» соседей быстро
-    // выходит на плато, как и должно быть для понятия «синергия».
     private static final double SYNERGY_SATURATION_K = 0.7;
 
     // =========================================================================
@@ -115,18 +102,12 @@ public class PropertyScoringService {
         if (profile.getDesiredNeighbors() != null) profile.getDesiredNeighbors().size();
         properties.forEach(p -> { if (p.getImages() != null) p.getImages().size(); });
 
-        // Параллелим Overpass-вызовы между объектами. Без выделенного пула
-        // .parallelStream() забирает общий ForkJoinPool — нежелательно делить
-        // его с другими частями приложения. 8 потоков — компромисс между
-        // wall-clock временем и нагрузкой на Overpass: 20 помещений × 2
-        // Overpass-запроса при пуле 4 укладывалось в ~100с (рядом с фронтовым
-        // таймаутом и часто его превышало). С пулом 8 + внутрипропертийной
-        // параллелизацией (см. scoreInternal) суммарный батч укладывается
-        // в ~30–40с даже без прогретого кэша.
+        // Параллелим Overpass-вызовы между объектами. 8 потоков — компромисс
+        // между wall-clock временем и нагрузкой на Overpass.
         ForkJoinPool pool = new ForkJoinPool(8);
         try {
             return pool.submit(() -> properties.parallelStream()
-                    .map(p -> scoreInternal(profile, p, tagIndex, pool))
+                    .map(p -> scoreInternal(profile, p, tagIndex))
                     .sorted(Comparator.comparingInt(ScoredPropertyDto::getTotalScore).reversed())
                     .collect(Collectors.toList())
             ).join();
@@ -138,7 +119,7 @@ public class PropertyScoringService {
     public ScoredPropertyDto scorePropertyWithGis(SearchProfile profile, Property property) {
         List<BusinessCategory> allCategories = businessCategoryRepository.findAll();
         Map<String, List<BusinessCategory>> tagIndex = buildTagIndex(allCategories);
-        return scoreInternal(profile, property, tagIndex, null);
+        return scoreInternal(profile, property, tagIndex);
     }
 
     // =========================================================================
@@ -146,39 +127,44 @@ public class PropertyScoringService {
     // =========================================================================
 
     private ScoredPropertyDto scoreInternal(SearchProfile profile, Property property,
-                                             Map<String, List<BusinessCategory>> tagIndex,
-                                             ForkJoinPool ioPool) {
+                                             Map<String, List<BusinessCategory>> tagIndex) {
         FinancialResult financial = calculateFinancial(profile, property);
         TechnicalResult technical = calculateTechnical(profile, property);
 
-        // Соседство и транспорт делают независимые Overpass-запросы. Если
-        // вызывать их последовательно, каждое помещение ждёт t1+t2 (10–60с).
-        // В рамках батча уже есть параллелизм между помещениями, но внутри
-        // одного помещения два HTTP-запроса всё равно блокировали поток
-        // дважды. При наличии IO-пула гоняем их параллельно — это режет
-        // per-property wall-clock примерно вдвое и спасает фронт от 120с
-        // таймаута на батче в 20 помещений.
-        NeighborhoodResult neighborhood;
-        TransportResult transport;
-        if (ioPool != null) {
-            CompletableFuture<NeighborhoodResult> neighborhoodFut = CompletableFuture.supplyAsync(
-                    () -> analyzeNeighborhood(profile, property, tagIndex), ioPool);
-            CompletableFuture<TransportResult> transportFut = CompletableFuture.supplyAsync(
-                    () -> calculateTransport(property), ioPool);
-            neighborhood = neighborhoodFut.join();
-            transport = transportFut.join();
-        } else {
-            neighborhood = analyzeNeighborhood(profile, property, tagIndex);
-            transport = calculateTransport(property);
-        }
+        // Один объединённый Overpass-вызов за всеми соседями И транспортом —
+        // раньше было два независимых HTTP-запроса с параллельной отправкой.
+        // Теперь — один round-trip и одна позиция в очереди Overpass на
+        // помещение, плюс общая обёртка multi-mirror+retry.
+        OverpassAreaSnapshot snapshot = fetchAreaSnapshot(profile, property);
 
-        int total = financial.score() + technical.score()
+        ScoredPropertyDto.DataStatus dataStatus = snapshot.isFailed()
+                ? ScoredPropertyDto.DataStatus.OVERPASS_UNAVAILABLE
+                : ScoredPropertyDto.DataStatus.COMPLETE;
+
+        NeighborhoodResult neighborhood = analyzeNeighborhood(profile, property, tagIndex, snapshot);
+        TransportResult transport = calculateTransport(property, snapshot);
+
+        int total;
+        String label;
+        String color;
+        if (dataStatus == ScoredPropertyDto.DataStatus.OVERPASS_UNAVAILABLE) {
+            // Считаем только то, что реально посчитано. Раньше тут было
+            // 40+15+5 = 60 «бесплатных» баллов при сбое Overpass, и плохой
+            // адрес выглядел отличным мэтчем. Теперь — честные fin+tech.
+            total = financial.score() + technical.score();
+            label = "⚠️ Частичная оценка — попробуйте позже";
+            color = "gray";
+        } else {
+            total = financial.score() + technical.score()
                   + neighborhood.competitorScore() + neighborhood.synergyScore()
                   + transport.score();
+            label = resolveMatchLabel(total);
+            color = resolveMatchColor(total);
+        }
 
-        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}, syn={}, trans={}",
+        log.debug("Scoring [{}]: total={}, fin={}, tech={}, comp={}, syn={}, trans={}, status={}",
                 property.getId(), total, financial.score(), technical.score(),
-                neighborhood.competitorScore(), neighborhood.synergyScore(), transport.score());
+                neighborhood.competitorScore(), neighborhood.synergyScore(), transport.score(), dataStatus);
 
         ScoreBreakdown breakdown = ScoreBreakdown.builder()
                 .financial(financial.part())
@@ -198,10 +184,37 @@ public class PropertyScoringService {
                 .transportScore(transport.score())
                 .directCompetitorNames(neighborhood.directNames())
                 .synergyNeighborNames(neighborhood.synergyNames())
-                .matchLabel(resolveMatchLabel(total))
-                .matchColor(resolveMatchColor(total))
+                .matchLabel(label)
+                .matchColor(color)
                 .breakdown(breakdown)
+                .dataStatus(dataStatus)
+                .algorithmVersion(ALGORITHM_VERSION)
                 .build();
+    }
+
+    /**
+     * Объединяет радиусы из профиля и фиксированный транспортный радиус,
+     * вызывает один Overpass-запрос. Если у помещения нет координат —
+     * возвращает «пустой OK» снимок (это валидное состояние, скоринг
+     * сам обработает отсутствие координат корректно).
+     */
+    private OverpassAreaSnapshot fetchAreaSnapshot(SearchProfile profile, Property property) {
+        if (property.getLatitude() == null || property.getLongitude() == null) {
+            return new OverpassAreaSnapshot(List.of(), List.of(), OverpassAreaSnapshot.FetchStatus.OK);
+        }
+        int competitorRadius = profile.getSearchRadiusMeters() != null
+                ? Math.min(profile.getSearchRadiusMeters(), 5000)
+                : 1000;
+        int synergyRadius = profile.getSynergyRadiusMeters() != null
+                ? Math.min(profile.getSynergyRadiusMeters(), 5000)
+                : competitorRadius;
+        // Один запрос за всем: бизнесы хотят бóльший из competitor/synergy,
+        // транспорт — отдельный фиксированный 1500м. Берём общий max.
+        int radius = Math.max(Math.max(competitorRadius, synergyRadius), TRANSPORT_SEARCH_RADIUS_METERS);
+        return overpassPlacesService.searchAreaSnapshot(
+                property.getLatitude().doubleValue(),
+                property.getLongitude().doubleValue(),
+                radius);
     }
 
     private record FinancialResult(int score, ScoreBreakdown.FinancialPart part) {}
@@ -210,20 +223,6 @@ public class PropertyScoringService {
 
     // =========================================================================
     //  КОМПОНЕНТ 1: Финансовый мэтч (0–20 баллов)
-    //
-    //  Две независимые оси по 10 баллов: бюджет и площадь.
-    //
-    //  Бюджет (0–10):
-    //    цена ≤ maxBudget  → 10 (включая «дешевле минимума» — это плюс)
-    //    цена > maxBudget  → 10 · exp(-3 · over_ratio),  over_ratio = (p-max)/max
-    //                        +10% → 7.4, +20% → 5.5, +50% → 2.2, +100% → 0.5
-    //
-    //  Площадь (0–10):
-    //    area ∈ [min, max]    → 10
-    //    area < minArea       → 10 · exp(-4 · deficit),   жёстче (не влезет)
-    //                           -5% → 8.2, -20% → 4.5, -50% → 1.4
-    //    area > maxArea       → 10 · exp(-1.5 · over),    мягче (платят за лишнее)
-    //                           +10% → 8.6, +50% → 4.7, +100% → 2.2
     // =========================================================================
 
     private FinancialResult calculateFinancial(SearchProfile profile, Property property) {
@@ -281,18 +280,6 @@ public class PropertyScoringService {
 
     // =========================================================================
     //  КОМПОНЕНТ 2: Технический мэтч (0–20 баллов)
-    //
-    //  Принципы:
-    //   - Булевы требования (вода, вентиляция, WC и т.д.) штрафуются на полный
-    //     вес при FALSE и на половину при null — «не указано» ≠ «отсутствует».
-    //   - Мощность и потолки — градиентные штрафы, пропорциональные дефициту:
-    //       power_deficit  = 1 - actual/required    (clamped в [0,1])
-    //       ceiling_deficit_factor = min(1, (req - actual) / 0.3 м)
-    //     Близкое к норме значение почти не штрафуется, сильное отклонение —
-    //     до полного веса.
-    //   - SHELL_AND_CORE больше не даёт безусловного штрафа: состояние ремонта
-    //     не пересекается с требованиями профиля, и универсальный минус был
-    //     просто шумом в скоринге.
     // =========================================================================
 
     private TechnicalResult calculateTechnical(SearchProfile profile, Property property) {
@@ -382,15 +369,16 @@ public class PropertyScoringService {
 
     // =========================================================================
     //  КОМПОНЕНТ 5: Транспортный мэтч (0–5 баллов)
-    //
-    //  effective_distance = closest_stop.distance * type.distancePenalty
-    //  score = 5 * exp(-effective_distance / σ_transport)
-    //
-    //  σ_transport = 500м. Метро/жд: penalty = 1.0; трамвай: 1.4; автобус: 2.0.
-    //  Пример: метро в 250м → ~3.0/5; автобус в 250м → effective 500м → ~1.8/5.
     // =========================================================================
 
-    private TransportResult calculateTransport(Property property) {
+    private TransportResult calculateTransport(Property property, OverpassAreaSnapshot snapshot) {
+        if (snapshot.isFailed()) {
+            return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
+                    .nearestType("UNAVAILABLE")
+                    .nearestDistanceMeters(-1)
+                    .reason("Overpass недоступен — транспорт не оценён")
+                    .build());
+        }
         if (property.getLatitude() == null || property.getLongitude() == null) {
             return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
                     .nearestType("NONE")
@@ -401,8 +389,7 @@ public class PropertyScoringService {
 
         double lat = property.getLatitude().doubleValue();
         double lon = property.getLongitude().doubleValue();
-        List<TransportStop> stops = overpassPlacesService.searchTransportNearby(
-                lat, lon, TRANSPORT_SEARCH_RADIUS_METERS);
+        List<TransportStop> stops = snapshot.transportStops();
 
         if (stops.isEmpty()) {
             return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
@@ -418,6 +405,10 @@ public class PropertyScoringService {
         for (TransportStop stop : stops) {
             if (stop.lat() == 0.0 && stop.lon() == 0.0) continue;
             double d = haversineMeters(lat, lon, stop.lat(), stop.lon());
+            // Транспорт хотим в фиксированном радиусе TRANSPORT_SEARCH_RADIUS_METERS,
+            // даже если общий Overpass-запрос захватил больше: ближайшая
+            // станция в 3км не «бонус», а формальность.
+            if (d > TRANSPORT_SEARCH_RADIUS_METERS) continue;
             double eff = d * stop.type().getDistancePenalty();
             if (eff < bestEffective) {
                 bestEffective = eff;
@@ -429,7 +420,7 @@ public class PropertyScoringService {
             return new TransportResult(0, ScoreBreakdown.TransportPart.builder()
                     .nearestType("NONE")
                     .nearestDistanceMeters(-1)
-                    .reason("остановки найдены, но без координат")
+                    .reason("остановки найдены, но без координат или вне радиуса")
                     .build());
         }
 
@@ -459,27 +450,6 @@ public class PropertyScoringService {
 
     // =========================================================================
     //  КОМПОНЕНТ 3 + 4: Анализ окрестности через Overpass API
-    //
-    //  Конкуренты (0–40 баллов) — distance-aware smooth decay:
-    //    weight_i = exp(-distance_i / σ),  σ = radius / 3
-    //    weightedDirect   = Σ weight_i по прямым конкурентам
-    //    competitorScore  = 40 * exp(-1.0 * weightedDirect)
-    //
-    //  Почему так, а не step-функция: в Москве в радиусе 1км может быть 50+
-    //  организаций той же категории, и прежняя «5+ direct = 0» обнуляла все
-    //  адреса в плотных районах. Теперь 5 далёких конкурентов (по 900м) дают
-    //  ~23/40, 5 близких (по 50м) — ~1/40, а абсолютные числа не клипают
-    //  значение в 0. Понятие «косвенный конкурент» убрано: на практике
-    //  оно даёт шум — соседняя пекарня для кофейни всё равно «магнит»,
-    //  а не угроза, и пользователи путались с тем, почему такие POI
-    //  «снимают» баллы.
-    //
-    //  Синергия (0–15 баллов) — distance-aware, насыщающаяся сумма весов:
-    //    Для каждой желаемой категории суммируем веса всех найденных POI и
-    //    прогоняем через 1-exp(-Σ/K). Один сосед даёт значимый вклад,
-    //    скопление быстро выходит на плато 1.0. Усредняем по всем желаемым
-    //    категориям, домножаем на 15. Сосед через дорогу весит больше, чем
-    //    через 1км; «100 кафе» уже не сводятся к «один ближайший».
     // =========================================================================
 
     private record NeighborhoodResult(
@@ -492,10 +462,32 @@ public class PropertyScoringService {
     ) {}
 
     private NeighborhoodResult analyzeNeighborhood(SearchProfile profile, Property property,
-                                                    Map<String, List<BusinessCategory>> tagIndex) {
+                                                    Map<String, List<BusinessCategory>> tagIndex,
+                                                    OverpassAreaSnapshot snapshot) {
+        // CASE A: Overpass упал — НЕ выставляем max-балл. Нули с понятным
+        // reason'ом; общий dataStatus = OVERPASS_UNAVAILABLE, totalScore
+        // считается только по fin+tech.
+        if (snapshot.isFailed()) {
+            ScoreBreakdown.CompetitorPart cp = ScoreBreakdown.CompetitorPart.builder()
+                    .directRefs(List.of())
+                    .totalNearbyBusinesses(0)
+                    .radiusMeters(0)
+                    .build();
+            ScoreBreakdown.SynergyPart sp = ScoreBreakdown.SynergyPart.builder()
+                    .desiredCategoriesCount(profile.getDesiredNeighbors() == null
+                            ? 0 : profile.getDesiredNeighbors().size())
+                    .foundCategoriesCount(0)
+                    .refs(List.of())
+                    .build();
+            return new NeighborhoodResult(0, List.of(), 0, List.of(), cp, sp);
+        }
+
         if (profile.getBusinessCategory() == null
                 || property.getLatitude() == null
                 || property.getLongitude() == null) {
+            // Корректное «нет данных для оценки» — категория бизнеса не задана
+            // или у помещения нет координат. Здесь max-балл оправдан: нечего
+            // штрафовать. Это поведение отличается от FAILED.
             ScoreBreakdown.CompetitorPart cp = ScoreBreakdown.CompetitorPart.builder()
                     .directRefs(List.of())
                     .totalNearbyBusinesses(0).radiusMeters(0)
@@ -509,14 +501,11 @@ public class PropertyScoringService {
         int competitorRadius = profile.getSearchRadiusMeters() != null
                 ? Math.min(profile.getSearchRadiusMeters(), 5000)
                 : 1000;
-        // Радиус для соседей-синергии может отличаться: например, конкурентов
-        // ищем в 300м, а кафе-«магниты» — в 1.5км. Если у проекта нет своего
-        // значения (старые профили / не задано), падаем обратно на общий.
         int synergyRadius = profile.getSynergyRadiusMeters() != null
                 ? Math.min(profile.getSynergyRadiusMeters(), 5000)
                 : competitorRadius;
-        // Overpass запрашиваем по большему радиусу, чтобы оба фильтра имели
-        // данные. Потом per-purpose отсекаем по расстоянию.
+        // Сам Overpass-запрос был сделан на max(competitor, synergy, transport=1500),
+        // здесь мы фильтруем результат по per-purpose радиусам.
         int radius = Math.max(competitorRadius, synergyRadius);
 
         BusinessCategory target = profile.getBusinessCategory();
@@ -524,20 +513,16 @@ public class PropertyScoringService {
         Long targetParentId = target.getParentCategory() != null
                 ? target.getParentCategory().getId()
                 : null;
-        // Корневая категория (например «Еда и напитки») сама не имеет osmTags,
-        // её роль — контейнер. Если арендатор выбрал корень, прямыми считаются
-        // ВСЕ подкатегории-дети этого корня (кафе+ресторан+пекарня и т.д.).
         boolean targetIsRoot = targetParentId == null;
         double lat = property.getLatitude().doubleValue();
         double lon = property.getLongitude().doubleValue();
 
-        log.info("[COMP-CTX] property={} profile={} (id={}) targetCategory={} (id={}, parentId={}, isRoot={}) osmTags=[{}] competitorR={}м synergyR={}м (overpassR={}м)",
+        log.info("[COMP-CTX] property={} profile={} (id={}) targetCategory={} (id={}, parentId={}, isRoot={}) osmTags=[{}] competitorR={}м synergyR={}м",
                 property.getId(), profile.getName(), profile.getId(),
                 target.getName(), targetId, targetParentId, targetIsRoot, target.getOsmTags(),
-                competitorRadius, synergyRadius, radius);
+                competitorRadius, synergyRadius);
 
-        // ------- Одно обращение к Overpass за всеми соседями -------
-        List<NearbyBusiness> nearbyBusinesses = overpassPlacesService.searchNearby(lat, lon, radius);
+        List<NearbyBusiness> nearbyBusinesses = snapshot.businesses();
 
         Set<Long> desiredNeighborIds = profile.getDesiredNeighbors() == null
                 ? Set.of()
@@ -546,8 +531,10 @@ public class PropertyScoringService {
                          .collect(Collectors.toSet());
 
         if (nearbyBusinesses.isEmpty()) {
+            // Overpass ОК, но вокруг действительно ничего нет. Здесь max
+            // оправдан: реальная ситуация «спальный район без конкурентов».
             int synergyEmpty = desiredNeighborIds.isEmpty() ? MAX_SYNERGY_SCORE : 0;
-            log.warn("[COMP-EMPTY] property={}: Overpass не вернул ни одной организации " +
+            log.warn("[COMP-EMPTY] property={}: Overpass успешно вернул ноль организаций " +
                             "(target='{}', desired={}). Балл по умолчанию {}/{}.",
                     property.getId(), target.getName(), desiredNeighborIds.size(),
                     MAX_COMPETITOR_SCORE, MAX_COMPETITOR_SCORE);
@@ -563,43 +550,21 @@ public class PropertyScoringService {
                                           synergyEmpty, List.of(), cp, sp);
         }
 
-        // ------- Классификация: direct / synergy с distance-aware весами -------
         final double sigma = Math.max(radius / DISTANCE_SIGMA_DIVISOR, 50.0);
 
         double weightedDirect = 0.0;
         long directCount = 0;
-        // {name, distance, weight} для UI/AI: сортируем по близости.
         List<ScoreBreakdown.CompetitorRef> directRanked = new ArrayList<>();
-        // Сырые веса конкурентов (без округления до 2 знаков) — для атрибуции
-        // impact пропорционально полному w, иначе дальние POI с весом <0.005
-        // округляются в 0 и их доля от потери баллов исчезает.
         List<Double> directRawWeights = new ArrayList<>();
-        // Для синергии:
-        //  - synergyTotalPerCategory — сумма весов всех соседей по каждой
-        //    желаемой категории. Используется в насыщающейся формуле
-        //    1 - exp(-Σ/K), чтобы скопление соседей давало больший балл,
-        //    чем один ближайший.
-        //  - synergyMatchesPerBusiness — список категорий, под которые
-        //    подпал каждый бизнес. Нужен потом для расчёта scoreImpact:
-        //    маржинальный вклад «без этого POI» по каждой его категории.
-        //  - synergyAllRefs — ВСЕ найденные совпадения, для списка в UI.
         Map<Long, Double> synergyTotalPerCategory = new LinkedHashMap<>();
         List<ScoreBreakdown.SynergyRef> synergyAllRefs = new ArrayList<>();
         List<Set<Long>> synergyMatchesPerBusiness = new ArrayList<>();
-        // Сырые (не округлённые до 2 знаков) веса POI для атрибуции импактов.
-        // Без них дальние POI с весом <0.005 после round2 становятся 0 и не
-        // получают своей доли от per_category, хотя в Σw_категории они учтены.
-        // Тогда сумма видимых +X.X не сходится с балом синергии.
         List<Double> synergyRawWeights = new ArrayList<>();
 
         for (NearbyBusiness business : nearbyBusinesses) {
             boolean isDirect = false;
             Set<Long> synergyMatchesForBusiness = new HashSet<>();
 
-            // Собираем все категории, под которые подпадает бизнес,
-            // через индекс OSM-тегов. Один и тот же бизнес может попасть
-            // под несколько категорий — это нормально (например shop=beauty
-            // → и «Салон красоты», и «Косметология»).
             Set<Long> matchedCatIds = new HashSet<>();
             for (String rubric : business.rubrics()) {
                 List<BusinessCategory> cats = tagIndex.get(rubric);
@@ -614,23 +579,15 @@ public class PropertyScoringService {
 
                 if (!isDirect) {
                     if (targetIsRoot) {
-                        // цель — корень: прямым считаем любую категорию,
-                        // у которой parent == target (т.е. подкатегория цели)
                         if (targetId.equals(matchedParentId) || targetId.equals(catId)) {
                             isDirect = true;
                         }
                     } else {
-                        // цель — лист: прямой == точное совпадение id
                         if (catId.equals(targetId)) {
                             isDirect = true;
                         }
                     }
                 }
-                // Синергия: матчим как по точному id, так и по родителю —
-                // иначе выбор «корневой» категории желаемого соседа (например,
-                // «Кафе и рестораны») не подхватывал бы бизнесы в её подкатегориях
-                // («Кофейня», «Ресторан»), хотя для конкурентов та же проверка
-                // через matchedParentId уже работает.
                 if (desiredNeighborIds.contains(catId)) {
                     synergyMatchesForBusiness.add(catId);
                 } else if (matchedParentId != null && desiredNeighborIds.contains(matchedParentId)) {
@@ -647,9 +604,6 @@ public class PropertyScoringService {
             Double bLat = hasCoords ? business.lat() : null;
             Double bLon = hasCoords ? business.lon() : null;
 
-            // Отсекаем по purpose-specific радиусу. Бизнесы без координат
-            // (distanceMeters < 0) пропускаем в оба фильтра — у них только
-            // FALLBACK_WEIGHT и они не могут быть исключены геометрически.
             boolean withinCompetitorRadius = distanceMeters < 0 || distanceMeters <= competitorRadius;
             boolean withinSynergyRadius    = distanceMeters < 0 || distanceMeters <= synergyRadius;
 
@@ -697,14 +651,6 @@ public class PropertyScoringService {
         int competitorScore = (int) Math.round(competitorScoreD);
         competitorScore = Math.max(0, Math.min(MAX_COMPETITOR_SCORE, competitorScore));
 
-        // Сколько каждый конкурент «съел» из competitorScore.
-        // Общая потеря = MAX - score; делим её между конкурентами
-        // пропорционально их СЫРОМУ весу (w_i / Σw). Это единственная разбивка,
-        // при которой Σ impacts по списку = (MAX - score). Используем сырой
-        // вес, а не ref.getWeight() (тот округлён до 2 знаков и обнуляет
-        // дальние POI), чтобы сумма импактов сходилась с реальной потерей.
-        // Атрибуцию делаем до сортировки, пока indices синхронны с
-        // directRawWeights.
         double totalLost = MAX_COMPETITOR_SCORE - competitorScoreD;
         if (weightedDirect > 0.0) {
             for (int i = 0; i < directRanked.size(); i++) {
@@ -714,8 +660,6 @@ public class PropertyScoringService {
             }
         }
 
-        // Сортировка по близости: ближайший конкурент первым (после атрибуции,
-        // чтобы не сломать соответствие с directRawWeights).
         directRanked.sort(Comparator.comparingDouble(ScoreBreakdown.CompetitorRef::getWeight).reversed());
         List<String> directNames = directRanked.stream().map(ScoreBreakdown.CompetitorRef::getName).collect(Collectors.toList());
 
@@ -725,12 +669,6 @@ public class PropertyScoringService {
         if (desiredNeighborIds.isEmpty()) {
             synergyScore = MAX_SYNERGY_SCORE;
         } else {
-            // Скоринг — насыщающаяся сумма весов на категорию:
-            //   per_category = 1 - exp(-Σ / K)
-            //   normalized   = avg(per_category по всем желаемым категориям)
-            // Так скопление 100 соседей в категории доводит её вклад до 1.0,
-            // а единичный далёкий сосед даёт мало — это и есть ожидание
-            // «много магнитов = синергия большая».
             double sumPerCategory = 0.0;
             for (Long catId : desiredNeighborIds) {
                 Double totalW = synergyTotalPerCategory.get(catId);
@@ -742,14 +680,6 @@ public class PropertyScoringService {
             synergyScore = (int) Math.round(synergyScoreD);
             synergyScore = Math.max(0, Math.min(MAX_SYNERGY_SCORE, synergyScore));
 
-            // Атрибуция баллов на POI: для каждой категории её вклад
-            // unit · per_category делим между всеми соседями этой категории
-            // ПРОПОРЦИОНАЛЬНО их весу (доля w_i / Σw_категории). Это
-            // единственная разбивка, при которой Σ impacts по списку
-            // строго равна synergyScore. Если соседа считать через
-            // маржинал «что без него было бы», насыщающая функция
-            // приписывает каждому почти ноль, и сумма уходит ниже балла —
-            // именно так получалось «12/15 в шапке vs 4 в сумме списка».
             double unit = (double) MAX_SYNERGY_SCORE / desiredNeighborIds.size();
             for (int i = 0; i < synergyAllRefs.size(); i++) {
                 ScoreBreakdown.SynergyRef ref = synergyAllRefs.get(i);
@@ -765,8 +695,6 @@ public class PropertyScoringService {
                 ref.setScoreImpact(round2(impact));
             }
 
-            // UI-список — ВСЕ найденные соседи (как у конкурентов), сортируем
-            // по близости.
             synergyAllRefs.stream()
                     .sorted(Comparator.comparingDouble(ScoreBreakdown.SynergyRef::getWeight).reversed())
                     .forEach(ref -> { synergyNames.add(ref.getName()); synergyRefs.add(ref); });
@@ -808,11 +736,6 @@ public class PropertyScoringService {
         return Math.round(v * 100.0) / 100.0;
     }
 
-    /**
-     * Возвращает вес соседа: {@code exp(-distance / σ)} в [0,1]. Если у POI
-     * нет координат (Overpass иногда не отдаёт center для way/relation),
-     * используем мягкий fallback, чтобы такой POI всё же учитывался.
-     */
     private double distanceWeight(double propertyLat, double propertyLon,
                                   NearbyBusiness business, double sigma) {
         double bLat = business.lat();
@@ -838,13 +761,6 @@ public class PropertyScoringService {
     //  HELPERS: индекс OSM-тег → категории
     // =========================================================================
 
-    /**
-     * Строит {@code Map<"key=value", List<BusinessCategory>>}, чтобы для
-     * каждой OSM-рубрики бизнеса находить совпадающие категории за O(1).
-     * Одна и та же пара ("shop=beauty") может вести к нескольким
-     * категориям (Салон красоты + Косметология) — это намеренно: оба
-     * считаются конкурентами при выборе любой из них.
-     */
     private Map<String, List<BusinessCategory>> buildTagIndex(List<BusinessCategory> categories) {
         Map<String, List<BusinessCategory>> index = new HashMap<>();
         for (BusinessCategory cat : categories) {

@@ -103,5 +103,48 @@ class AnalyticsService {
       );
     } catch (_) {
     }
+    await ViewedPropertiesStore.instance.add(propertyId);
+  }
+}
+
+/// Локальный персистентный список помещений, которые арендатор уже открывал
+/// в деталях. Используется только для UI-подсказки на карте — чтобы метки
+/// просмотренных помещений выводились слегка серовато-оранжевым цветом.
+/// Хранится в FlutterSecureStorage как строка с запятыми (значения compactны
+/// и легко парсятся без зависимости от dart:convert).
+class ViewedPropertiesStore {
+  ViewedPropertiesStore._();
+  static final ViewedPropertiesStore instance = ViewedPropertiesStore._();
+
+  static const String _storageKey = 'viewed_property_ids';
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+
+  Set<int>? _cache;
+
+  Future<Set<int>> load() async {
+    if (_cache != null) return _cache!;
+    final raw = await _storage.read(key: _storageKey);
+    if (raw == null || raw.isEmpty) {
+      _cache = <int>{};
+      return _cache!;
+    }
+    final ids = <int>{};
+    for (final part in raw.split(',')) {
+      final id = int.tryParse(part.trim());
+      if (id != null) ids.add(id);
+    }
+    _cache = ids;
+    return _cache!;
+  }
+
+  Future<void> add(int propertyId) async {
+    final ids = await load();
+    if (ids.add(propertyId)) {
+      await _storage.write(key: _storageKey, value: ids.join(','));
+    }
+  }
+
+  bool isViewedSync(int propertyId) {
+    return _cache?.contains(propertyId) ?? false;
   }
 }
