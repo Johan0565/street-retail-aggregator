@@ -157,13 +157,8 @@ class ScoredProperty {
   final String matchLabel;
   final String matchColor;    // "green", "yellow", "red", "gray"
   final ScoreBreakdown? breakdown;
-  /// Статус данных. При overpassUnavailable totalScore посчитан только по
-  /// финансам+технике, остальные компоненты обнулены.
   final ScoringDataStatus dataStatus;
-  /// Когда оценка была посчитана на бэкенде. null для legacy-ответов.
-  /// Используется для UI «оценено N минут назад / обновить».
   final DateTime? computedAt;
-  /// Версия алгоритма скоринга — для отладки и проверки актуальности.
   final String? algorithmVersion;
 
   const ScoredProperty({
