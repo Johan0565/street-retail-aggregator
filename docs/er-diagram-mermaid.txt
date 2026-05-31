@@ -1,0 +1,228 @@
+erDiagram
+    USERS {
+        BIGSERIAL id PK
+        VARCHAR email UK "NOT NULL, UNIQUE"
+        VARCHAR password_hash "NOT NULL"
+        VARCHAR role "NOT NULL (TENANT/LANDLORD/ADMIN)"
+        VARCHAR status "(UNVERIFIED/ACTIVE/BANNED)"
+        VARCHAR avatar_url
+        VARCHAR verification_code
+        TIMESTAMP code_expires_at
+        TIMESTAMP created_at "NOT NULL, auto"
+    }
+
+    LANDLORD_PROFILES {
+        BIGINT user_id PK,FK "FK → users.id"
+        VARCHAR company_name
+        VARCHAR inn
+        VARCHAR phone
+        BOOLEAN is_verified
+    }
+
+    TENANT_PROFILES {
+        BIGINT user_id PK,FK "FK → users.id"
+        VARCHAR name
+        VARCHAR inn UK "UNIQUE"
+        VARCHAR phone
+        BIGINT target_business_category_id FK "FK → business_categories.id"
+    }
+
+    BUSINESS_CATEGORIES {
+        BIGSERIAL id PK
+        VARCHAR name "NOT NULL"
+        BIGINT parent_id FK "FK → business_categories.id"
+        TEXT search_keywords "OSM-теги CSV"
+    }
+
+    PROPERTIES {
+        BIGSERIAL id PK
+        BIGINT landlord_id FK "FK → users.id, NOT NULL"
+        VARCHAR title "NOT NULL"
+        TEXT description
+        VARCHAR address
+        DECIMAL latitude "precision 10,8"
+        DECIMAL longitude "precision 11,8"
+        DECIMAL area_sqm "precision 10,2"
+        DECIMAL price_per_month "precision 12,2"
+        VARCHAR status "(DRAFT/PUBLISHED/RENTED/ARCHIVED)"
+        VARCHAR property_type "(OFFICE/RETAIL/WAREHOUSE/PRODUCTION/PSN/CATERING)"
+        VARCHAR deal_type "(DIRECT_LEASE/SUBLEASE)"
+        VARCHAR building_name
+        VARCHAR building_class "(A/B/B_PLUS/C/D)"
+        INTEGER floor
+        INTEGER total_floors
+        INTEGER build_year
+        BOOLEAN tax_included
+        BOOLEAN opex_included
+        BOOLEAN utility_included
+        INTEGER deposit_months
+        BOOLEAN rent_holidays
+        BOOLEAN legal_address_provided
+        VARCHAR metro_station
+        INTEGER time_to_metro
+        INTEGER power_kw
+        BOOLEAN has_water
+        BOOLEAN has_ventilation
+        BOOLEAN has_separate_entrance
+        VARCHAR repair_state "(SHELL_AND_CORE/TYPICAL/DESIGNER/PRE_FINISHING)"
+        DECIMAL ceiling_height "precision 4,2"
+        VARCHAR layout "(OPEN_SPACE/CABINET/MIXED)"
+        VARCHAR parking
+        VARCHAR security
+        BOOLEAN has_wc
+        BOOLEAN has_parking
+        BOOLEAN has_loading_zone
+        VARCHAR contact_name
+        VARCHAR contact_phone
+        DECIMAL agent_fee "precision 5,2"
+        VARCHAR cadastral_number
+        VARCHAR access_type "(FREE/SCHEDULE/PASS)"
+        VARCHAR heating_type "(CENTRAL/AUTONOMOUS/NONE)"
+        VARCHAR furniture_state "(EMPTY/FURNISHED/READY_BUSINESS)"
+        BOOLEAN is_occupied
+    }
+
+    PROPERTY_IMAGES {
+        BIGSERIAL id PK
+        BIGINT property_id FK "FK → properties.id, NOT NULL"
+        VARCHAR image_url "NOT NULL"
+        BOOLEAN is_main
+    }
+
+    SEARCH_PROFILES {
+        BIGSERIAL id PK
+        BIGINT tenant_id FK "FK → users.id, NOT NULL"
+        VARCHAR name "NOT NULL"
+        BIGINT business_category_id FK "FK → business_categories.id"
+        DECIMAL min_area "precision 10,2"
+        DECIMAL max_area "precision 10,2"
+        DECIMAL min_budget "precision 12,2"
+        DECIMAL max_budget "precision 12,2"
+        INTEGER min_power_kw
+        BOOLEAN requires_water
+        BOOLEAN requires_ventilation
+        BOOLEAN requires_separate_entrance
+        BOOLEAN requires_wc
+        BOOLEAN requires_parking
+        BOOLEAN requires_loading_zone
+        DECIMAL min_ceiling_height "precision 4,2"
+        DECIMAL center_latitude "precision 10,8"
+        DECIMAL center_longitude "precision 11,8"
+        INTEGER search_radius_meters
+        INTEGER synergy_radius_meters
+        BOOLEAN is_active "default true"
+        TIMESTAMP created_at "NOT NULL, auto"
+    }
+
+    APPLICATIONS {
+        BIGSERIAL id PK
+        BIGINT property_id FK "FK → properties.id, NOT NULL"
+        BIGINT tenant_id FK "FK → users.id, NOT NULL"
+        VARCHAR status "NOT NULL (PENDING/REVIEWING/ACCEPTED/REJECTED)"
+        TEXT cover_letter
+        TEXT rejection_reason
+        TIMESTAMP created_at "NOT NULL, auto"
+    }
+
+    CHAT_ROOMS {
+        BIGSERIAL id PK
+        BIGINT application_id FK "FK → applications.id, NOT NULL"
+        BIGINT landlord_id FK "FK → users.id, NOT NULL"
+        BIGINT tenant_id FK "FK → users.id, NOT NULL"
+        TIMESTAMP created_at "NOT NULL, auto"
+    }
+
+    CHAT_MESSAGES {
+        BIGSERIAL id PK
+        BIGINT chat_room_id FK "FK → chat_rooms.id, NOT NULL"
+        BIGINT sender_id FK "FK → users.id, NOT NULL"
+        TEXT content "NOT NULL"
+        BOOLEAN is_read
+        TIMESTAMP timestamp "NOT NULL, auto"
+    }
+
+    FAVORITE_EVENTS {
+        BIGSERIAL id PK
+        BIGINT property_id FK "FK → properties.id, NOT NULL"
+        BIGINT tenant_id FK "FK → users.id"
+        TIMESTAMP created_at "NOT NULL, auto"
+    }
+
+    PROPERTY_VIEW_EVENTS {
+        BIGSERIAL id PK
+        BIGINT property_id FK "FK → properties.id, NOT NULL"
+        BIGINT viewer_id FK "FK → users.id"
+        TIMESTAMP view_timestamp "NOT NULL, auto"
+    }
+
+    PROPERTY_SCORE_SNAPSHOTS {
+        BIGSERIAL id PK
+        BIGINT property_id "NOT NULL"
+        BIGINT profile_id
+        VARCHAR algorithm_version "NOT NULL, len 16"
+        INTEGER total_score "NOT NULL"
+        INTEGER financial_score "NOT NULL"
+        INTEGER technical_score "NOT NULL"
+        INTEGER competitor_score "NOT NULL"
+        INTEGER synergy_score "NOT NULL"
+        INTEGER transport_score "NOT NULL"
+        VARCHAR match_label "len 128"
+        VARCHAR match_color "len 16"
+        VARCHAR data_status "NOT NULL, len 32"
+        TEXT payload_json "NOT NULL"
+        TIMESTAMP computed_at "NOT NULL"
+    }
+
+    OVERPASS_CACHE {
+        BIGSERIAL id PK
+        VARCHAR cache_key UK "NOT NULL, UNIQUE, len 64"
+        TEXT response_json "NOT NULL"
+        TIMESTAMP cached_at "NOT NULL"
+    }
+
+    FAVORITES {
+        BIGINT tenant_id PK,FK "FK → users.id"
+        BIGINT property_id PK,FK "FK → properties.id"
+    }
+
+    PROPERTY_EXISTING_NEIGHBORS {
+        BIGINT property_id PK,FK "FK → properties.id"
+        BIGINT category_id PK,FK "FK → business_categories.id"
+    }
+
+    SEARCH_PROFILE_DESIRED_NEIGHBORS {
+        BIGINT search_profile_id PK,FK "FK → search_profiles.id"
+        BIGINT category_id PK,FK "FK → business_categories.id"
+    }
+
+    USERS ||--o| LANDLORD_PROFILES : "has profile"
+    USERS ||--o| TENANT_PROFILES : "has profile"
+    USERS ||--o{ PROPERTIES : "lists (landlord)"
+    USERS ||--o{ APPLICATIONS : "submits (tenant)"
+    USERS ||--o{ SEARCH_PROFILES : "creates"
+    USERS ||--o{ CHAT_ROOMS : "participates (landlord)"
+    USERS ||--o{ CHAT_ROOMS : "participates (tenant)"
+    USERS ||--o{ CHAT_MESSAGES : "sends"
+    USERS |o--o{ FAVORITE_EVENTS : "adds to favorites"
+    USERS |o--o{ PROPERTY_VIEW_EVENTS : "views"
+
+    PROPERTIES ||--o{ PROPERTY_IMAGES : "has photos"
+    PROPERTIES ||--o{ APPLICATIONS : "receives applications"
+    PROPERTIES ||--o{ FAVORITE_EVENTS : "favorited"
+    PROPERTIES ||--o{ PROPERTY_VIEW_EVENTS : "viewed"
+
+    APPLICATIONS ||--o{ CHAT_ROOMS : "opens chat"
+    CHAT_ROOMS ||--o{ CHAT_MESSAGES : "contains messages"
+
+    BUSINESS_CATEGORIES |o--o{ BUSINESS_CATEGORIES : "parent-child"
+    BUSINESS_CATEGORIES |o--o{ TENANT_PROFILES : "target category"
+    BUSINESS_CATEGORIES |o--o{ SEARCH_PROFILES : "business type"
+
+    USERS ||--o{ FAVORITES : "adds"
+    PROPERTIES ||--o{ FAVORITES : "added to"
+
+    PROPERTIES ||--o{ PROPERTY_EXISTING_NEIGHBORS : "has neighbor"
+    BUSINESS_CATEGORIES ||--o{ PROPERTY_EXISTING_NEIGHBORS : "is neighbor"
+
+    SEARCH_PROFILES ||--o{ SEARCH_PROFILE_DESIRED_NEIGHBORS : "desires"
+    BUSINESS_CATEGORIES ||--o{ SEARCH_PROFILE_DESIRED_NEIGHBORS : "is desired"

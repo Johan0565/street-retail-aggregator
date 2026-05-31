@@ -1,12 +1,12 @@
 ﻿**********************
 Windows PowerShell transcript start
-Start time: 20260524124147
+Start time: 20260529090728
 Username: COMPUDACKTER\User
 RunAs User: COMPUDACKTER\User
 Configuration Name: 
 Machine: COMPUDACKTER (Microsoft Windows NT 10.0.26100.0)
-Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Games\street-retail-aggregator\fix-cloudflared-service.ps1
-Process ID: 38172
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+Process ID: 48812
 PSVersion: 5.1.26100.7462
 PSEdition: Desktop
 PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.7462
@@ -34,50 +34,51 @@ StartType : Automatic
 Recent event log entries (newest 10):
 
 
-TimeGenerated : 24/05/2026 12:41:49 PM
+TimeGenerated : 29/05/2026 9:07:31 AM
 EntryType     : Information
 Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe --config
                 C:\Users\User\.cloudflared\config.yml --no-autoupdate tunnel run retail-demo]
 
-TimeGenerated : 24/05/2026 12:41:49 PM
+TimeGenerated : 29/05/2026 9:07:31 AM
 EntryType     : Information
 Msg           : Cloudflared service starting
 
-TimeGenerated : 24/05/2026 12:41:48 PM
+TimeGenerated : 29/05/2026 9:07:28 AM
 EntryType     : Information
-Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
+Msg           : Cloudflared service stopped
 
-TimeGenerated : 24/05/2026 12:41:48 PM
+TimeGenerated : 29/05/2026 9:07:28 AM
+EntryType     : Information
+Msg           : cloudflared terminated without error
+
+TimeGenerated : 29/05/2026 9:07:28 AM
+EntryType     : Information
+Msg           : cloudflared starting graceful shutdown
+
+TimeGenerated : 29/05/2026 9:07:10 AM
+EntryType     : Information
+Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe --config
+                C:\Users\User\.cloudflared\config.yml --no-autoupdate tunnel run retail-demo]
+
+TimeGenerated : 29/05/2026 9:07:10 AM
 EntryType     : Information
 Msg           : Cloudflared service starting
 
-TimeGenerated : 24/05/2026 12:41:39 PM
+TimeGenerated : 29/05/2026 9:07:10 AM
 EntryType     : Information
-Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
+Msg           : Cloudflared service stopped
 
-TimeGenerated : 24/05/2026 12:41:39 PM
+TimeGenerated : 29/05/2026 9:07:10 AM
 EntryType     : Information
-Msg           : Cloudflared service starting
+Msg           : cloudflared terminated without error
 
-TimeGenerated : 24/05/2026 12:41:28 PM
+TimeGenerated : 29/05/2026 9:06:28 AM
 EntryType     : Information
-Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
-
-TimeGenerated : 24/05/2026 12:41:28 PM
-EntryType     : Information
-Msg           : Cloudflared service starting
-
-TimeGenerated : 24/05/2026 12:41:19 PM
-EntryType     : Information
-Msg           : Cloudflared service arguments: [C:\Program Files (x86)\cloudflared\cloudflared.exe]
-
-TimeGenerated : 24/05/2026 12:41:19 PM
-EntryType     : Information
-Msg           : Cloudflared service starting
+Msg           : cloudflared starting graceful shutdown
 
 
 
 **********************
 Windows PowerShell transcript end
-End time: 20260524124200
+End time: 20260529090741
 **********************
