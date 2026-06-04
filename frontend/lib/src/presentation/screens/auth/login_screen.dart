@@ -400,6 +400,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => const TenantMainScreen(isGuestMode: true),
+                                    ),
+                                  );
+                                },
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: _primaryOrange, width: 1.5),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            'Войти как гость',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: _primaryOrange,
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 20),
 
                         Row(

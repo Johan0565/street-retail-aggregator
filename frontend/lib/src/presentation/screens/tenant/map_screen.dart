@@ -13,7 +13,8 @@ import 'package:yandex_mapkit/yandex_mapkit.dart';
 
 class MapScreen extends StatefulWidget {
   final bool isLandlordMode;
-  const MapScreen({super.key, this.isLandlordMode = false});
+  final bool isGuestMode;
+  const MapScreen({super.key, this.isLandlordMode = false, this.isGuestMode = false});
 
   @override
   State<MapScreen> createState() => MapScreenState();
@@ -6706,13 +6707,17 @@ class MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _loadProfilesThenProperties() async {
-    if (!widget.isLandlordMode) {
-      final profiles = await _scoringService.getMyProfiles();
-      if (mounted) {
-        setState(() {
-          _myProfiles = profiles;
-          _activeProfile = null; // не выбираем автоматически — ждём явного выбора
-        });
+    if (!widget.isLandlordMode && !widget.isGuestMode) {
+      try {
+        final profiles = await _scoringService.getMyProfiles();
+        if (mounted) {
+          setState(() {
+            _myProfiles = profiles;
+            _activeProfile = null; // не выбираем автоматически — ждём явного выбора
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading profiles: $e');
       }
     }
     _loadProperties();
@@ -6722,17 +6727,21 @@ class MapScreenState extends State<MapScreen> {
   // на вкладку карты, чтобы подхватить только что созданные проекты поиска
   // без перезапуска приложения.
   Future<void> reloadProfiles() async {
-    if (widget.isLandlordMode) return;
-    final profiles = await _scoringService.getMyProfiles();
-    if (!mounted) return;
-    setState(() {
-      _myProfiles = profiles;
-      // Если активный профиль удалили из списка — сбрасываем выбор.
-      if (_activeProfile != null &&
-          !profiles.any((p) => p.id == _activeProfile!.id)) {
-        _activeProfile = null;
-      }
-    });
+    if (widget.isLandlordMode || widget.isGuestMode) return;
+    try {
+      final profiles = await _scoringService.getMyProfiles();
+      if (!mounted) return;
+      setState(() {
+        _myProfiles = profiles;
+        // Если активный профиль удалили из списка — сбрасываем выбор.
+        if (_activeProfile != null &&
+            !profiles.any((p) => p.id == _activeProfile!.id)) {
+          _activeProfile = null;
+        }
+      });
+    } catch (e) {
+      debugPrint('Error reloading profiles: $e');
+    }
   }
 
   @override
@@ -6855,7 +6864,7 @@ class MapScreenState extends State<MapScreen> {
       List<Property> properties;
       final Map<int, ScoredProperty> newCache = {};
 
-      if (_activeProfile != null && !widget.isLandlordMode) {
+      if (_activeProfile != null && !widget.isLandlordMode && !widget.isGuestMode) {
         final scored = await _scoringService.getScoredProperties(_activeProfile!.id);
         for (final sp in scored) {
           newCache[sp.property.id] = sp;
@@ -7112,6 +7121,7 @@ class MapScreenState extends State<MapScreen> {
                           desiredNeighborNames:
                               _activeProfile?.desiredNeighborNames ?? const [],
                           isLandlordMode: widget.isLandlordMode,
+                          isGuestMode: widget.isGuestMode,
                         ),
                       ),
                     );
@@ -7251,6 +7261,7 @@ class MapScreenState extends State<MapScreen> {
     double? minArea  = _activeFilter.minArea;
     double? maxArea  = _activeFilter.maxArea;
     Set<ScoreBucket> selectedBuckets = Set.from(_activeFilter.scoreBuckets);
+    Set<String> selectedTypes = Set.from(_activeFilter.propertyTypes);
     final bool hasScoring = _activeProfile != null && _scoreCache.isNotEmpty;
 
     final minPriceCtrl = TextEditingController(text: minPrice?.toInt().toString() ?? '');
@@ -7287,6 +7298,7 @@ class MapScreenState extends State<MapScreen> {
                       onPressed: () => setSheet(() {
                         minPrice = maxPrice = minArea = maxArea = null;
                         selectedBuckets = {};
+                        selectedTypes = {};
                         minPriceCtrl.clear(); maxPriceCtrl.clear();
                         minAreaCtrl.clear();  maxAreaCtrl.clear();
                       }),
@@ -7320,6 +7332,78 @@ class MapScreenState extends State<MapScreen> {
                   Expanded(child: _filterTextField(maxAreaCtrl, 'до', isNumeric: true,
                       onChanged: (v) => maxArea = double.tryParse(v))),
                 ]),
+                const SizedBox(height: 16),
+
+                // ── Тип недвижимости ───────────────────────────────────
+                const Text('Тип недвижимости',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _propertyTypeChip(
+                      label: 'Офис',
+                      value: 'OFFICE',
+                      selected: selectedTypes.contains('OFFICE'),
+                      onTap: () => setSheet(() {
+                        if (selectedTypes.contains('OFFICE')) {
+                          selectedTypes.remove('OFFICE');
+                        } else {
+                          selectedTypes.add('OFFICE');
+                        }
+                      }),
+                    ),
+                    _propertyTypeChip(
+                      label: 'Стрит-ритейл',
+                      value: 'RETAIL',
+                      selected: selectedTypes.contains('RETAIL'),
+                      onTap: () => setSheet(() {
+                        if (selectedTypes.contains('RETAIL')) {
+                          selectedTypes.remove('RETAIL');
+                        } else {
+                          selectedTypes.add('RETAIL');
+                        }
+                      }),
+                    ),
+                    _propertyTypeChip(
+                      label: 'Склад',
+                      value: 'WAREHOUSE',
+                      selected: selectedTypes.contains('WAREHOUSE'),
+                      onTap: () => setSheet(() {
+                        if (selectedTypes.contains('WAREHOUSE')) {
+                          selectedTypes.remove('WAREHOUSE');
+                        } else {
+                          selectedTypes.add('WAREHOUSE');
+                        }
+                      }),
+                    ),
+                    _propertyTypeChip(
+                      label: 'ПСН',
+                      value: 'PSN',
+                      selected: selectedTypes.contains('PSN'),
+                      onTap: () => setSheet(() {
+                        if (selectedTypes.contains('PSN')) {
+                          selectedTypes.remove('PSN');
+                        } else {
+                          selectedTypes.add('PSN');
+                        }
+                      }),
+                    ),
+                    _propertyTypeChip(
+                      label: 'Общепит',
+                      value: 'CATERING',
+                      selected: selectedTypes.contains('CATERING'),
+                      onTap: () => setSheet(() {
+                        if (selectedTypes.contains('CATERING')) {
+                          selectedTypes.remove('CATERING');
+                        } else {
+                          selectedTypes.add('CATERING');
+                        }
+                      }),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
 
                 // ── Оценка соответствия ────────────────────────────────
@@ -7386,6 +7470,7 @@ class MapScreenState extends State<MapScreen> {
                         maxPrice: maxPrice,
                         minArea:  minArea,
                         maxArea:  maxArea,
+                        propertyTypes: selectedTypes,
                         scoreBuckets: selectedBuckets,
                       ));
                     },
@@ -7481,6 +7566,41 @@ class MapScreenState extends State<MapScreen> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _propertyTypeChip({
+    required String label,
+    required String value,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final color = const Color(0xFFFF8C00); // _primaryOrange
+    return Material(
+      color: selected ? color : color.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : color.withOpacity(0.3),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : Colors.black87,
+            ),
           ),
         ),
       ),

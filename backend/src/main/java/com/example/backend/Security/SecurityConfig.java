@@ -39,6 +39,7 @@ public class SecurityConfig {
                 // 3. И только потом правила авторизации
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/properties").permitAll()
                         .requestMatchers("/api/properties/{id}").permitAll()
                         .requestMatchers("/api/categories/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

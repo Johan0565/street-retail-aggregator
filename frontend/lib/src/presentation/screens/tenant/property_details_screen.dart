@@ -22,6 +22,7 @@ class PropertyDetailsFocusResult {
 class PropertyDetailsScreen extends StatefulWidget {
   final Property property;
   final bool isLandlordMode;
+  final bool isGuestMode;
   final ScoredProperty? scoredProperty; // необязательный результат скоринга
   /// ID проекта поиска, под который строится скоринг и AI-отчёт. Если не
   /// задан — бэкенд использует первый активный проект арендатора.
@@ -35,6 +36,7 @@ class PropertyDetailsScreen extends StatefulWidget {
     super.key,
     required this.property,
     this.isLandlordMode = false,
+    this.isGuestMode = false,
     this.scoredProperty,
     this.profileId,
     this.desiredNeighborNames = const [],
@@ -70,7 +72,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    if (!widget.isLandlordMode) {
+    if (!widget.isLandlordMode && !widget.isGuestMode) {
       _checkIfFavorite();
       AnalyticsService().logPropertyView(widget.property.id);
       // скор подгружается только явно (кнопкой), чтобы не тратить 2GIS-лимиты при каждом открытии
@@ -410,7 +412,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
             backgroundColor: Colors.white,
             iconTheme: const IconThemeData(color: Colors.black),
             actions: [
-              if (!widget.isLandlordMode)
+              if (!widget.isLandlordMode && !widget.isGuestMode)
                 IconButton(
                   icon: _isCheckingInitialState || _isLoadingFavorite
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
@@ -481,7 +483,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
                     ],
                     const SizedBox(height: 10),
                     _buildAiExplainButton(),
-                  ] else if (!widget.isLandlordMode) ...[
+                  ] else if (!widget.isLandlordMode && !widget.isGuestMode) ...[
                     const SizedBox(height: 16),
                     _buildScoreRequestButton(),
                   ],
@@ -553,7 +555,7 @@ class _PropertyDetailsScreenState extends State<PropertyDetailsScreen> {
 
       // КНОПКА ЗАЯВКИ СНИЗУ (только для арендатора)
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: !widget.isLandlordMode
+      floatingActionButton: !widget.isLandlordMode && !widget.isGuestMode
           ? SafeArea(
               minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: SizedBox(

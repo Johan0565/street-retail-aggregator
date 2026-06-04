@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../auth/login_screen.dart';
 import 'favorites_screen.dart';
 import 'map_screen.dart';
 import 'my_applications_screen.dart';
@@ -6,7 +7,8 @@ import 'profile_screen.dart';
 import 'search_profiles_screen.dart';
 
 class TenantMainScreen extends StatefulWidget {
-  const TenantMainScreen({super.key});
+  final bool isGuestMode;
+  const TenantMainScreen({super.key, this.isGuestMode = false});
 
   @override
   State<TenantMainScreen> createState() => _TenantMainScreenState();
@@ -28,13 +30,18 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
   final GlobalKey<MyApplicationsScreenState> _applicationsKey = GlobalKey<MyApplicationsScreenState>();
 
   // Список экранов для каждой вкладки
-  late final List<Widget> _screens = [
-    MapScreen(key: _mapKey),
-    FavoritesScreen(key: _favoritesKey),
-    MyApplicationsScreen(key: _applicationsKey),
-    const SearchProfilesScreen(),
-    const ProfileScreen(),
-  ];
+  late final List<Widget> _screens = widget.isGuestMode
+      ? [
+          MapScreen(key: _mapKey, isGuestMode: true),
+          const SizedBox(), // Плейсхолдер для вкладки Профиль
+        ]
+      : [
+          MapScreen(key: _mapKey),
+          FavoritesScreen(key: _favoritesKey),
+          MyApplicationsScreen(key: _applicationsKey),
+          const SearchProfilesScreen(),
+          const ProfileScreen(),
+        ];
 
   @override
   Widget build(BuildContext context) {
@@ -67,13 +74,18 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
-              _buildNavItem(icon: Icons.favorite_border, activeIcon: Icons.favorite, label: 'Избранное', index: 1),
-              _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail, label: 'Заявки', index: 2),
-              _buildNavItem(icon: Icons.manage_search_rounded, activeIcon: Icons.manage_search, label: 'Проекты', index: 3),
-              _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Профиль', index: 4),
-            ],
+            children: widget.isGuestMode
+                ? [
+                    _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
+                    _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Профиль', index: 1),
+                  ]
+                : [
+                    _buildNavItem(icon: Icons.map_outlined, activeIcon: Icons.map_rounded, label: 'Карта', index: 0),
+                    _buildNavItem(icon: Icons.favorite_border, activeIcon: Icons.favorite, label: 'Избранное', index: 1),
+                    _buildNavItem(icon: Icons.mail_outline, activeIcon: Icons.mail, label: 'Заявки', index: 2),
+                    _buildNavItem(icon: Icons.manage_search_rounded, activeIcon: Icons.manage_search, label: 'Проекты', index: 3),
+                    _buildNavItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Профиль', index: 4),
+                  ],
           ),
         ),
       ),
@@ -91,9 +103,18 @@ class _TenantMainScreenState extends State<TenantMainScreen> {
 
     return GestureDetector(
       onTap: () {
+        if (widget.isGuestMode && index == 1) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+          );
+          return;
+        }
         setState(() {
           _selectedIndex = index;
         });
+        if (widget.isGuestMode) return;
         // При переходе на "Избранное" обновляем список,
         // чтобы свежедобавленные помещения были видны без перезапуска.
         if (index == 1) {
