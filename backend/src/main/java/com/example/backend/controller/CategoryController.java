@@ -39,13 +39,13 @@ public class CategoryController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GLOBAL_ADMIN')")
     public ResponseEntity<BusinessCategoryDto> createCategory(@RequestBody com.example.backend.dto.CategoryRequest request) {
         return ResponseEntity.ok(categoryService.createCategory(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GLOBAL_ADMIN')")
     public ResponseEntity<BusinessCategoryDto> updateCategory(
             @PathVariable Long id,
             @RequestBody com.example.backend.dto.CategoryRequest request) {
@@ -53,7 +53,7 @@ public class CategoryController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'GLOBAL_ADMIN')")
     public ResponseEntity<Void> deleteCategory(@PathVariable Long id) {
         categoryService.deleteCategory(id);
         return ResponseEntity.noContent().build();

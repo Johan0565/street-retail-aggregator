@@ -29,4 +29,15 @@ public class ChatRoom {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "is_disputed", nullable = false)
+    @Builder.Default
+    private Boolean isDisputed = false;
+
+    @Column(name = "dispute_resolved", nullable = false)
+    @Builder.Default
+    private Boolean disputeResolved = false;
+
+    @Column(name = "dispute_notes", columnDefinition = "TEXT")
+    private String disputeNotes;
 }

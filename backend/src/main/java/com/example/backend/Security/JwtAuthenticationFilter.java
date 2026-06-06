@@ -34,9 +34,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String jwt;
         final String userEmail;
 
-        // Если заголовка нет или он не начинается с "Bearer ", пропускаем запрос дальше
-        // (возможно, это публичный эндпоинт вроде логина)
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        // Если заголовка нет, он не начинается с "Bearer " или содержит "null"/"undefined" в качестве токена, пропускаем
+        if (authHeader == null || !authHeader.startsWith("Bearer ") || 
+            authHeader.equals("Bearer null") || authHeader.equals("Bearer undefined")) {
             filterChain.doFilter(request, response);
             return;
         }

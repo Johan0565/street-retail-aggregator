@@ -26,7 +26,9 @@ class PropertyService {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.get(
         '/properties/$id',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
+        options: token != null
+            ? Options(headers: {'Authorization': 'Bearer $token'})
+            : null,
       );
       if (response.statusCode == 200 && response.data is Map) {
         return Property.fromJson(response.data as Map<String, dynamic>);
@@ -325,7 +327,9 @@ class PropertyService {
       final token = await _storage.read(key: 'jwt_token');
       final response = await _dio.get(
         '/properties',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
+        options: token != null
+            ? Options(headers: {'Authorization': 'Bearer $token'})
+            : null,
       );
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;

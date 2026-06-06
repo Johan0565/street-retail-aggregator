@@ -138,4 +138,14 @@ public class Property {
 
     @Column(name = "is_occupied")
     private Boolean isOccupied; // Сдается сейчас или пустует
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_verification_status", nullable = false)
+    @Builder.Default
+    private VerificationStatus documentVerificationStatus = VerificationStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "address_confirmation_status", nullable = false)
+    @Builder.Default
+    private VerificationStatus addressConfirmationStatus = VerificationStatus.PENDING;
 }

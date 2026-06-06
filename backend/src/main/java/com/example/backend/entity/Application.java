@@ -37,4 +37,11 @@ public class Application {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "is_deal_confirmed", nullable = false)
+    @Builder.Default
+    private Boolean isDealConfirmed = false;
+
+    @Column(name = "deal_confirmed_at")
+    private LocalDateTime dealConfirmedAt;
 }
