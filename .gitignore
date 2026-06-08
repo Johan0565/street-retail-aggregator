@@ -18,6 +18,7 @@ frontend/.flutter-plugins-dependencies
 frontend/.pub-cache/
 frontend/.pub/
 frontend/.packages
+backend/logs/stdout.log
 *.apk
 *.aab
 

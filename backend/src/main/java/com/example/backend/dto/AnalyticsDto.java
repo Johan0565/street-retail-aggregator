@@ -19,5 +19,3 @@ public class AnalyticsDto {
     private Long propertyId;
     private String propertyTitle;
 }
-
-
